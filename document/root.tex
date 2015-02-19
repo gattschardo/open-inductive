@@ -33,6 +33,14 @@
 % for uniform font size
 %\renewcommand{\isastyle}{\isastyleminor}
 
+% from http://tex.stackexchange.com/a/12931
+\begingroup
+  \catcode`\_=\active
+  \gdef_#1{\ensuremath{\sb{\mathrm{#1}}}}
+\endgroup
+\mathcode`\_=\string"8000
+\catcode`\_=12
+
 
 \newtheorem{defn}{Definition}
 \newtheorem{cmd}{Command}
