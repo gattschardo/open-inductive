@@ -1,0 +1,255 @@
+\section{Registering Predicates}
+
+Defining an inductive predicate is a two-step process.
+%
+First, the name of the predicate needs to be registered.
+%
+Then one or more defining introduction rules can be associated with it.
+%
+
+\paragraph{Predicate Registration.} The command to register a new inductive predicate in the current theory is \textbf{open\_inductive}.
+%
+Its syntax is:
+%
+
+\begin{cmd} \label{cmdopen}
+\textbf{open\_inductive} pred-name[::type]
+\end{cmd}
+Here, \emph{pred-name} can be any valid identifier.
+%
+The type annotation is optional.
+%
+Successfully registering a predicate will result in a diagnostic message:
+
+\begin{msg}
+\emph{Two variants of this message exist, depending on whether a type annotation was given:}
+\begin{itemize}
+\item Registered open inductive predicate \emph{name} without type.
+\item Registered open inductive predicate \emph{name} with type \emph{type}.
+\end{itemize}
+\end{msg}
+
+It is legal to register the same predicate multiple times.
+%
+This can be used when a predicate has some introduction rules defined in one file and is to be extended in another to remind the reader of its presence.
+%
+If a type was specified, it cannot be changed later however.
+%
+This leads to an error with the message:
+%
+
+\begin{err}
+Can't re-type predicate, was \emph{old-type} would become \emph{new-type}.
+\end{err}
+
+Also, if a type was specified the predicate cannot be registered later without a type.
+%
+This leads to an error with the message:
+%
+
+\begin{err}
+Can't delete type from predicate, was \emph{type}.
+\end{err}
+
+\paragraph{Introduction Rules.}
+
+The command to associate an introduction rule with an open predicate is \textbf{add\_intro}, its syntax is:
+%
+
+\begin{cmd} \label{cmdintro}
+\textbf{add\_intro} pred-name intro-name\textbf{:} term
+\end{cmd}
+Here, \emph{pred-name} refers to a previously registered predicate, \emph{intro-name} is a new name for the introduction rule and \emph{term} is an inner syntax expression containing the introduction rule.
+%
+
+Successful registration of an introduction rules results in a diagnostic message:
+%
+
+\begin{msg}
+Registered introduction rule \emph{rule-name}: \emph{term} for \emph{pred-name}
+\end{msg}
+
+The predicate that \textbf{add\_intro} refers to as \emph{pred-name} needs to be registered beforehand using Command \ref{cmdopen}.
+%
+Using \textbf{add\_intro} with an unregistered predicate results in an error with the message:
+%
+
+\begin{err}
+No such open inductive predicate: \emph{pred-name}
+\end{err}
+
+The defining term is checked for syntax and internal consistency by the parser.
+%
+The occurrences of the predicate in the rule are also checked to match the type of the predicate at the point of registration (if specified).
+%
+Additionally they are checked structurally by \textbf{add\_intro}, so it is impossible to add a rule that cannot be used as introduction rule (i.e. when the conclusion does not contain the predicate).
+%
+
+\section{Registering Theorems}
+
+Using an open inductive predicate, theorems can be proved by induction with a separate proof for each introduction rule.
+%
+Like predicates, theorems need to be registered as open theorems first.
+%
+This is accomplished by the command \textbf{open\_theorem}, its syntax is:
+%
+
+\begin{cmd} \label{cmdthm}
+\textbf{open\_theorem} theorem-name \textbf{shows} term
+\end{cmd}
+
+Here, \emph{theorem-name} is the name with which the theorem is later installed in the theory, \emph{term} is the proposition written in as an inner syntax term.
+%
+
+There is no need to explicitly specify which open inductive predicates occur in the theorem.
+%
+The package parses the term, finds them and reports them back to the user.
+%
+The message after successful registration is:
+%
+
+\begin{msg}
+Declared open theorem \emph{theorem-name} as \emph{term} on \emph{predicate-name(s)}.
+\end{msg}
+
+Here, \emph{predicate-name(s)} is the list of open inductive predicates that are found in the theorem.
+%
+Again, all occurring predicates are checked to be compatible with their annotated type (if specified).
+%
+
+\section{Proving Theorems}
+
+A registered open theorem can now be proved by induction.
+%
+The case for each introduction rule is a separate proof.
+%
+The command to begin a proof is \textbf{show\_open}, its syntax is:
+%
+
+\begin{cmd} \label{cmdshow}
+\textbf{show\_open} \textit{theorem-name} \textbf{for} \textit{intro-name} [\textbf{assumes} \textit{intro-name(s)} \dots]
+\end{cmd}
+
+Here, \emph{theorem-name} refers to the theorem that is to be proved and \emph{intro-name} refers to the name of the introduction rule for which the inductive case is to be instantiated.
+%
+The optional list of \emph{intro-name(s)} are names of additional introduction rules that shall be added to the proof context as assumptions.
+%
+At this point, the type of the predicate is matched with its inferred type in the introduction rule.
+%
+If this fails a type unification error is printed.
+%
+
+The theorem needs to be registered first with Command \ref{cmdthm}.
+%
+Referring to an unregistered theorem leads to an error with the message:
+%
+
+\begin{err}
+No such theorem: \emph{theorem-name}
+\end{err}
+
+Likewise, the introduction rule needs to be added to the predicate occurring in the proposition using Command \ref{cmdintro}.
+%
+Referring to an unregistered theorem leads to an error with the message:
+%
+
+\begin{err}
+No introduction rule named \emph{intro-name} in \textit{pred-name(s)}
+\end{err}
+
+If no error occurs, Isabelle switches to proof mode and the theorem can now be proved for the selected introduction rule.
+%
+The proof context is enriched with the selected introduction rule(s), they are named \emph{pred-name.intro-name}, just as they would be when produced by the Inductive package.
+%
+
+Following a successful proof no theorem is installed in the current theory.
+%
+The package saves the proof internally and only exports the complete theorems, not the case for each introduction rule.
+%
+
+\paragraph{Non-inductive proofs.} It also possible to prove theorems that do not require induction. In this case the invocation is:
+
+\begin{cmd} \label{cmdshowdirect}
+\textbf{show\_open} \textit{theorem-name} [\textbf{assumes} \textit{intro-name(s)} \dots]
+\end{cmd}
+
+No induction theorem is applied to the proposition.
+%
+As with inductive proofs, the proof context is enriched with the selected introduction rules, registered with their usual names.
+%
+
+\section{Closing Predicates}
+
+To get theory-level definitions of the predicates and theorems with proofs assembled from the cases, the \textbf{close\_inductive} command is used.
+%
+Its syntax is:
+%
+
+\begin{cmd}
+\textbf{close\_inductive} pred-name \textbf{assumes} intro-name [\textbf{and} intro-name \dots] \textbf{for} close-name
+\end{cmd}
+
+The predicate named \emph{pred-name} will be created with the listed introduction rules with the theory-level name \emph{close-name}.
+%
+Here, \emph{close-name} can be identical to \emph{pred-name}.
+%
+
+The predicate referred to by \emph{pred-name} needs to be registered using Command \ref{cmdopen}.
+%
+Referring to an unregistered predicate leads to an error with the message:
+%
+
+\begin{err}
+Undefined open predicate: \emph{pred-name}
+\end{err}
+
+Likewise, each of the rules listed as \emph{intro-name} needs to be registered in the correct predicate using Command \ref{cmdintro}.
+%
+Referring to an introduction rule not added to the predicate leads to an error with the message:
+%
+
+\begin{err}
+No introduction rule name \emph{intro-name} defined in open predicate \emph{pred-name}
+\end{err}
+
+If no error occurs, a message is printed:
+\begin{msg}
+Closing inductive predicate \emph{pred-name} with \emph{intro-name(s)} as \emph{close-name}.
+Candidates for closing: \emph{theorem-name(s)}
+\end{msg}
+
+The candidates for closing are open theorems (registered with Command \ref{cmdthm}) that contain the specified predicate.
+%
+If a direct proof given using Command \ref{cmdshowdirect} exists for a theorem, this proof is preferred.
+%
+If such a proof cannot be used because of introduction rules that are assumed but not present in the close predicate, a warning is printed:
+
+\begin{msg} \label{msgassm}
+Cannot close open theorem \emph{theorem-name}, missing introduction rules: \emph{intro-name(s)}
+\end{msg}
+
+If no direct proof exists, the inductive proofs are checked for completeness.
+%
+If any of these theorems cannot be closed because of missing proofs (given using Command \ref{cmdshow}), a warning is printed:
+%
+
+\begin{msg}
+Cannot close open theorem \emph{theorem-name}, missing proofs for \emph{intro-name(s)}
+\end{msg}
+
+If all inductive proofs exist, but contain assumptions that cannot be satisfied, Message~\ref{msgassm} is printed here, too.
+%
+Open theorems for which a complete proof can be assembled are registered in the theory by their names.
+%
+For successful registration a message is printed:
+
+\begin{msg}
+Installing \emph{name}: \emph{term}
+\end{msg}
+
+Here, \emph{term} is the (now proved) proposition.
+%
+The name is of the form \emph{theorem-name\_pred-name} with \emph{theorem-name} being the name of the registered open theorem and \emph{close-name} the name of the predicate chosen with \textbf{close\_inductive}.
+%
+This is to avoid name clashes when closing multiple variants of the same predicate that have proofs for the same theorems.
+%

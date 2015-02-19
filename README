@@ -1,0 +1,9 @@
+Open Inductive
+==============
+
+Open inductive predicate definitions for Isabelle. To run the session (and build the documentation)
+run
+
+> isabelle build -D .
+
+in this directory.
