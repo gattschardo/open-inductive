@@ -5,7 +5,7 @@ session "Open_Inductive" (AFP) = HOL +
 
 (* Timeout (in sec) in case of non-termination problems *)
 (*  options [timeout = 600]*)
-  options [document_output = "output"]
+  options [document = "pdf", document_output = "output"]
 
 (* To suppress document generation of some theories: *)
 (*
@@ -20,6 +20,6 @@ session "Open_Inductive" (AFP) = HOL +
     
 (* Dependencies on document source files: *)
   document_files
-    "user.tex"
     "root.bib"
     "root.tex"
+    "user.tex"
