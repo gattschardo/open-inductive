@@ -9,7 +9,7 @@ keywords
 begin
 
 text
-{*  Title:      Open_Inductive.thy
+{*  Title:      Open\_Inductive.thy
     Author:     Richard Molitor, IPD Snelting, KIT
 
 Open inductive predicates with flexible sets of introduction rules
