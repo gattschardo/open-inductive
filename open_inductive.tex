@@ -1,0 +1,43 @@
+\documentclass{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage{paralist}
+\usepackage{hyperref}
+
+
+\urlstyle{sf}
+\makeatletter
+% Inspired by http://anti.teamidiot.de/nei/2009/09/latex_url_slash_spacingkerning/
+% but slightly less kern and shorter underscore
+\let\UrlSpecialsOld\UrlSpecials
+\def\UrlSpecials{\UrlSpecialsOld\do\/{\Url@@slash}\do\_{\Url@@underscore}}%
+\def\Url@@slash{\@@ifnextchar/{\kern-.11em\mathchar47\kern-.2em}%
+   {\kern-.0em\mathchar47\kern-.08em\penalty\UrlBigBreakPenalty}}
+\def\Url@@underscore{\nfss@@text{\leavevmode \kern.06em\vbox{\hrule\@@width.3em}}}
+\makeatother
+
+
+\title{Open Inductive Predicates}
+\author{Joachim Breitner \and Richard Molitor}
+\institute{Karlsruhe Institute of Technology}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+TODO
+\end{abstract}
+
+\section{Introduction}
+
+\section{Conclusion}
+
+\subsubsection*{Acknowledgments}
+
+\bibliographystyle{splncs03}
+\bibliography{bib}
+\end{document}
