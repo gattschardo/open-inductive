@@ -1,4 +1,6 @@
+\let\oldvec\vec% Store \vec in \oldvec
 \documentclass{llncs}
+\let\vec\oldvec% Restore \vec from \oldvec
 
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -10,7 +12,6 @@
 \usepackage[safe]{tipa} % for \textlambda
 \usepackage{amsmath}
 \usepackage{mathpartir}
-
 
 \urlstyle{sf}
 \makeatletter
@@ -34,6 +35,7 @@
 \newcommand{\ssred}[4]{#1 : #2 \mathrel{\rotatebox[origin=c]{90}{$\Lleftarrow$}} #3 : #4}
 \newcommand{\sRule}[1]{\text{{\textsc{#1}}}}
 \newcommand{\dom}[1]{\mathsf{dom}\;#1}
+\newcommand{\carrier}[1]{\mathsf{carrier}\;#1}
 
 
 
@@ -91,17 +93,120 @@ Later, we might want to discuss a slightly different semantics, i.e. one where r
 \end{mathpar}
 If we claim that the lemma above holds for the slighly modified semantics, as well, we have to prove it.
 
-In a pen-and-paper proof, we would not write a complet proof by induction again, as -- quite obvious to anyone regularly working with inductive proofs -- three of the four subproofs would be identical. Instead, we would only provide the proof for the case \sRule{Var'}.
+In a pen-and-paper proof, we would not write the complete proof by induction again, as -- quite obvious to anyone familiar with inductive proofs -- three of the four subproofs would be identical. Instead, we would only provide the proof for the case \sRule{Var'}.
 
-But when working with an interactive theorem prover, such convenience is not easily possible: We would have to copy-and-paste the definition of $\Downarrow$ and the proof, and then adjust the rule \sRule{Var} and corresponding proof case. We might abstract the common parts into lemmas of their own, but that again requires carefully stating the proof obligations of that case as a separate lemma. In either case, maintaining such redudancy will causes headaches when further need to be made. Furthermore, this does not scale to many variants of one predicate, e.g. when adding a garbage collection rule.
+But when working with an interactive theorem prover, such convenience is not easily possible: We would have to copy-and-paste the definition of $\Downarrow$ and the proof, and then adjust the rule \sRule{Var} and corresponding proof case. We might abstract the common parts into lemmas of their own, but that requires carefully stating the proof obligations of that case as a separate lemma. In either case, maintaining such redudancy will cause headaches when further changes need to be made. Furthermore, this does not scale if many variants of one predicate are needed.
 
-Our aim is to make such convenience as in the pen-and-paper proof available to the users of interactive theorem provers. In order to do so, we formalize the intuition behind the shortcuts and introduce \emph{open inductive predicates}. An inductive proof of a theorem involving such an open predicate will be proven for one inductive case at once, so for each concrete instance of the predicate, where the set of introduction rules is finalized, those theorems are available that have been shown for all used introduction rules.
+Our aim is to make such convenience as in the pen-and-paper proof available to the users of interactive theorem provers. In order to do so, we formalize the intuition behind the shortcuts, introducing the concept of \emph{open inductive predicates}. An inductive proof of a theorem involving such an open predicate can be proven for a single inductive case at once. For each concrete instance of the predicate, when the set of introduction rules is finalized, all those theorems are made available that have been shown for all used introduction rules.
 
 \noindent Our contributions are
 \begin{itemize}
-\item We introduce the theory of open inductive theorems to formalize the folklore around inductively defined predicate and their modularization.
-\item We describe an implementation of open inductive theorems as a conservative extension to the interactive theorem prover Isabelle/HOL.
+\item We introduce the theory of open inductive predicates to formalize the folklore around inductively defined predicate and their modularization.
+\item We describe an implementation of open inductive predicates as a conservative extension to the interactive theorem prover Isabelle/HOL.
 \end{itemize}
+
+\section{The theory of open inductive predicates}
+
+Despite the ubiquity of inductively defined predicates both in informal and formal mathematics, there is no canonical, abstract description of how such an predicate is defined and what the resulting artifacts (definitions, theorems) are, so we provide our own based on \cite{paulson-2000}.
+
+\subsection{From regular inductive predicates\ldots}
+
+An inductive predicate $P$ is defined by specifying \emph{introduction rules}, which are formulas of the form
+\[
+I_i[P]:\ \forall \vec x.\,   M_i[P, \vec x] \implies P(t_i(\vec x)), \quad i \in J
+\]
+where $M_i$ is the premise of the rule, which may be absent (i.e.\ vacuously true), $t_i$ is an arbitrary term, and $\vec x$ are the free variables occuring in $M_i$ and $t_i$ the introduction rule. We only model unary predicates here; the generalization to relations is mostly technical.
+
+Given such rules, and if, depending on the actual logic used, certain side-conditions hold (such as the monotonicity of the $M_i$ in the case of Isabelle's implementation of inductive predicate via least fixedpoints), then the predicate $P$ is introduced to the logic, introduction rules $I_n[P]$ become theorems and, most importantly, the following induction rule for $P$ is a theorem:
+\begin{mathpar}
+\forall Q.\,
+\inferrule{
+\big[
+\forall \vec x.\,
+M_i[P\wedge Q, \vec x] \implies Q(t_i(\vec x))
+\big]_{i\in J}
+}
+{\forall x.\, P(x) \implies Q(x)}
+\end{mathpar}
+
+\begin{example}
+\label{ex:reach}
+For example, in an inductive definition of the predicate „is reachable from $a$ by the relation $R$“, we’d specify the two introduction rules $I_1:\ P(a)$ and $I_2:\ \forall x\,y.\, P(x) \wedge R(x,y) \implies P(y)$ and obtain the induction rule
+\begin{mathpar}
+\forall Q.\,
+\inferrule{
+Q(a) \\ \forall x\,y.\,  P(x)\wedge Q(x) \wedge R(x,y) \implies Q(y)
+}
+{\forall x.\, P(x) \implies Q(x)}
+\end{mathpar}
+
+A proof of the proposition $P(x) \implies x \in \carrier R$ using this induction rule would produce the two proof obligations
+\begin{compactitem}
+\item $a \in \carrier R$, and 
+\item $\forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$.
+\end{compactitem}
+\end{example}
+
+Already this formulation makes the key observation motivating this work evident: For a given proposition $Q$ and inductive predicate $P$, the proof obligation for the inductive case $i\in J$ in an application of the induction theorem only depends on $M_i$ and $t_i$. Adding, removing or changing the other introduction rules has no effect on this.
+
+\begin{example}
+As a variation of \autoref{ex:reach}, consider the predicate „is reachable from $a$ by the symmetric closure of $R$“. In addition to $I_1$ and $I_3$ we would add the introduction rule $I_3:\ \forall x\,y.\, P(x) \wedge R(y,x) \implies P(y)$. Note that the assumptions in the induction rule
+\begin{mathpar}
+\forall Q.\,
+\inferrule{
+Q(a) \\ 
+\forall x\,y.\,  P(x)\wedge Q(x) \wedge R(x,y) \implies Q(y) \\
+\forall x\,y.\,  P(x)\wedge Q(x) \wedge R(y,x) \implies Q(y)
+}
+{\forall x.\, P(x) \implies Q(x)}
+\end{mathpar}
+are unchanged, and also the subgoals when proving $P(x) \implies x \in \carrier R$, namely
+\begin{compactitem}
+\item $a \in \carrier R$,
+\item $\forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$ and
+\item $\forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(y,x) \implies y \in\carrier R$,
+\end{compactitem}
+are unmodified.
+\end{example}
+
+\subsection{\ldots to open inductive predicates}
+
+Assume for a given proposition $Q$, the proof for such a proof obligation does not rely on any particular properties of $P$. Then we can state the corresponding proof obligation as an independent lemma:
+\[
+C_i[Q]:\ \forall P\, \vec x.\,   M_i[P \wedge Q, \vec x] \implies P(t_i(\vec x))
+\]
+Note that the predicate $P$ is now quantified over; the proof of this predicate will know anything about this, not even the introduction rule $I_i[P]$ itself. On the other hand this allows us to state and prove this theorem independent of any concrete definition of $P$.
+ 
+If we now introduce an inductive predicate $P$ with introduction rules $I_i[P]$, $i\in J$, and the $C_i[Q]$, $i\in J$ have been proven, then the proof of $P(x) \implies Q(x)$ is immediate: After applying the induction theorem, each subgoal $i\in J$ can be solved by specializing the corresponding $C_i[Q]$ to the actual predicate $P$:
+\begin{mathpar}
+\inferrule*[Right=induction]{
+%\left[
+{\forall i\in J.\,}
+\inferrule*[Right=specialization]{
+C_i[Q]
+}{
+\forall \vec x.\, M_i[P\wedge Q, \vec x] \implies Q(t_i(\vec x))
+}
+%\right]_{i\in J}
+}
+{P(x) \implies Q(x)}
+\end{mathpar}
+
+Applying this idea to our example, we would prove the three theorems 
+\begin{compactitem}
+\item $C_1: \forall P.\, a \in \carrier R$,
+\item $C_2: \forall P.\, \forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$ and
+\item $C_3: \forall P.\, \forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(y,x) \implies y \in\carrier R$,
+\end{compactitem}
+once and obtain $P(x) \implies x \in \carrier R$ for either of the two inductive definitions, without having to repeat the proofs.
+
+
+\subsection{Introduction rules as assumptions}
+
+In that form, the\dots
+
+
+
 
 
 
