@@ -111,23 +111,25 @@ Despite the ubiquity of inductively defined predicates both in informal and form
 
 \subsection{From regular inductive predicates\ldots}
 
-An inductive predicate $P$ is defined by specifying \emph{introduction rules}, which are formulas of the form
+An inductive predicate $P_J$ is defined by specifying \emph{introduction rules}, which are formulas of the form
 \[
 I_i[P]:\ \forall \vec x.\,   M_i[P, \vec x] \implies P(t_i(\vec x)), \quad i \in J
 \]
 where $M_i$ is the premise of the rule, which may be absent (i.e.\ vacuously true), $t_i$ is an arbitrary term, and $\vec x$ are the free variables occuring in $M_i$ and $t_i$ the introduction rule. We only model unary predicates here; the generalization to relations is mostly technical.
 
-Given such rules, and if, depending on the actual logic used, certain side-conditions hold (such as the monotonicity of the $M_i$ in the case of Isabelle's implementation of inductive predicate via least fixedpoints), then the predicate $P$ is introduced to the logic, introduction rules $I_n[P]$ become theorems and, most importantly, the following induction rule for $P$ is a theorem:
+Given such rules, and if, depending on the actual logic used, certain side-conditions hold (such as the monotonicity of the $M_i$ in the case of Isabelle's implementation of inductive predicate via least fixedpoints), then the predicate $P_J$ is introduced to the logic, introduction rules $I_n[P_J]$ become theorems for $P_J$ and, most importantly, the following induction rule for $P_J$ is a theorem:
 \begin{mathpar}
 \forall Q.\,
 \inferrule{
 \big[
 \forall \vec x.\,
-M_i[P\wedge Q, \vec x] \implies Q(t_i(\vec x))
+M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 \big]_{i\in J}
 }
-{\forall x.\, P(x) \implies Q(x)}
+{\forall x.\, P_J(x) \implies Q(x)}
 \end{mathpar}
+
+We carefully distinguish between the variable $P$, as it occurs in terms such as $I_i[P]$, and the concrete inductive predicate $P_J$, which is formed from the inducive predicate $I_i$, $i\in J$.
 
 \begin{example}
 \label{ex:reach}
@@ -135,19 +137,19 @@ For example, in an inductive definition of the predicate „is reachable from $a
 \begin{mathpar}
 \forall Q.\,
 \inferrule{
-Q(a) \\ \forall x\,y.\,  P(x)\wedge Q(x) \wedge R(x,y) \implies Q(y)
+Q(a) \\ \forall x\,y.\,  P_{\{1,2\}}(x)\wedge Q(x) \wedge R(x,y) \implies Q(y)
 }
-{\forall x.\, P(x) \implies Q(x)}
+{\forall x.\, P_{\{1,2\}}(x) \implies Q(x)}
 \end{mathpar}
 
-A proof of the proposition $P(x) \implies x \in \carrier R$ using this induction rule would produce the two proof obligations
+A proof of the proposition $P_{\{1,2\}}(x) \implies x \in \carrier R$ using this induction rule would produce the two proof obligations
 \begin{compactitem}
 \item $a \in \carrier R$, and 
-\item $\forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$.
+\item $\forall x\,y.\,  P_{\{1,2\}}(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$.
 \end{compactitem}
 \end{example}
 
-Already this formulation makes the key observation motivating this work evident: For a given proposition $Q$ and inductive predicate $P$, the proof obligation for the inductive case $i\in J$ in an application of the induction theorem only depends on $M_i$ and $t_i$. Adding, removing or changing the other introduction rules has no effect on this.
+Already this formulation makes the key observation motivating this work evident: For a given proposition $Q$ and inductive predicate $P_J$, the proof obligation for the inductive case $i\in J$ in an application of the induction theorem only depends on $M_i$ and $t_i$. Adding, removing or changing the other introduction rules has no effect on this.
 
 \begin{example}
 As a variation of \autoref{ex:reach}, consider the predicate „is reachable from $a$ by the symmetric closure of $R$“. In addition to $I_1$ and $I_3$ we would add the introduction rule $I_3:\ \forall x\,y.\, P(x) \wedge R(y,x) \implies P(y)$. Note that the assumptions in the induction rule
@@ -155,29 +157,29 @@ As a variation of \autoref{ex:reach}, consider the predicate „is reachable fro
 \forall Q.\,
 \inferrule{
 Q(a) \\ 
-\forall x\,y.\,  P(x)\wedge Q(x) \wedge R(x,y) \implies Q(y) \\
-\forall x\,y.\,  P(x)\wedge Q(x) \wedge R(y,x) \implies Q(y)
+\forall x\,y.\,  P_{\{1,2,3\}}(x)\wedge Q(x) \wedge R(x,y) \implies Q(y) \\
+\forall x\,y.\,  P_{\{1,2,3\}}(x)\wedge Q(x) \wedge R(y,x) \implies Q(y)
 }
-{\forall x.\, P(x) \implies Q(x)}
+{\forall x.\, P_{\{1,2,3\}}(x) \implies Q(x)}
 \end{mathpar}
-are unchanged, and also the subgoals when proving $P(x) \implies x \in \carrier R$, namely
+are (besides the name of the inductive predicate) unchanged, and also the subgoals when proving $P_{\{1,2,3\}}(x) \implies x \in \carrier R$, namely
 \begin{compactitem}
 \item $a \in \carrier R$,
-\item $\forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$ and
-\item $\forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(y,x) \implies y \in\carrier R$,
+\item $\forall x\,y.\,  P_{\{1,2,3\}}(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$ and
+\item $\forall x\,y.\,  P_{\{1,2,3\}}(x)\wedge x\in \carrier R\wedge R(y,x) \implies y \in\carrier R$,
 \end{compactitem}
 are unmodified.
 \end{example}
 
 \subsection{\ldots to open inductive predicates}
 
-Assume for a given proposition $Q$, the proof for such a proof obligation does not rely on any particular properties of $P$. Then we can state the corresponding proof obligation as an independent lemma:
+Assume for a given proposition $Q$, the proof for such a proof obligation does not rely on any particular properties of $P_J$. Then we can state the corresponding proof obligation as an independent lemma:
 \[
-C_i[Q]:\ \forall P\, \vec x.\,   M_i[P \wedge Q, \vec x] \implies P(t_i(\vec x))
+C_i[Q]:\ \forall P\, \vec x.\,   M_i[P \wedge Q, \vec x] \implies Q(t_i(\vec x))
 \]
-Note that the predicate $P$ is now quantified over; the proof of this predicate will know anything about this, not even the introduction rule $I_i[P]$ itself. On the other hand this allows us to state and prove this theorem independent of any concrete definition of $P$.
+Note that in this \emph{partial inductive proof} the predicate $P$ is quantified over; the proof of this predicate will know anything about this, not even the introduction rule $I_i[P_J]$ itself. On the other hand this allows us to state and prove this theorem independent of any concrete definition of $P_J$.
  
-If we now introduce an inductive predicate $P$ with introduction rules $I_i[P]$, $i\in J$, and the $C_i[Q]$, $i\in J$ have been proven, then the proof of $P(x) \implies Q(x)$ is immediate: After applying the induction theorem, each subgoal $i\in J$ can be solved by specializing the corresponding $C_i[Q]$ to the actual predicate $P$:
+If we now introduce an inductive predicate $P_J$ with introduction rules $I_i[P]$, $i\in J$, and the $C_i[Q]$, $i\in J$ have been proven, then the proof of $P_J(x) \implies Q(x)$ is immediate: After applying the induction theorem, each subgoal $i\in J$ can be solved by specializing the corresponding partial inductive proof $C_i[Q]$ to the actual predicate $P_J$:
 \begin{mathpar}
 \inferrule*[Right=induction]{
 %\left[
@@ -185,11 +187,11 @@ If we now introduce an inductive predicate $P$ with introduction rules $I_i[P]$,
 \inferrule*[Right=specialization]{
 C_i[Q]
 }{
-\forall \vec x.\, M_i[P\wedge Q, \vec x] \implies Q(t_i(\vec x))
+\forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 }
 %\right]_{i\in J}
 }
-{P(x) \implies Q(x)}
+{\forall x.\, P_J(x) \implies Q(x)}
 \end{mathpar}
 
 Applying this idea to our example, we would prove the three theorems 
@@ -198,16 +200,97 @@ Applying this idea to our example, we would prove the three theorems
 \item $C_2: \forall P.\, \forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$ and
 \item $C_3: \forall P.\, \forall x\,y.\,  P(x)\wedge x\in \carrier R\wedge R(y,x) \implies y \in\carrier R$,
 \end{compactitem}
-once and obtain $P(x) \implies x \in \carrier R$ for either of the two inductive definitions, without having to repeat the proofs.
+once and obtain $P_J(x) \implies x \in \carrier R$ for either of the two inductive definitions (i.e.\ $J=\{1,2\}$ and $J=\{1,2,3\}$), without having to repeat the proofs.
 
 
-\subsection{Introduction rules as assumptions}
+\subsection{The Introduction rule as an assumptions}
 
-In that form, the\dots
+In the previous section, the proof for the inductive cases of $P_J(x) \implies Q(x)$ did not make any assumption about $P_J$ itself. Often, that is too restrictive, e.g. when the $P_J$ occurs in $Q$, such as in the proposition $P_J(x) \implies P(f(x))$ for a fixed function $f$.
+In order to extract each inductive case as a separate lemma abstract in $P$, we have to add additional assumptions about $P$ to it. In this case, it sufficies to add the introduction rule corresponding to current case as an assumption inside the $P$-quantifier:
+\[
+C_i[Q]:\ \forall P.\, I_i[P] \implies \forall \vec x.\,   M_i[P \wedge Q, \vec x] \implies Q(t_i(\vec x))
+\]
+
+When we use such a partial inductive proof obligation in an inductive proof, we not only specialize it, but discharge the assumption using the real introduction rule (which, by then, is a theorem):
+
+\begin{mathpar}
+\inferrule*[Right=induction]{
+%\left[
+{\forall i\in J.\,}
+\inferrule*[Right=MP]{
+I_i[P_J] \\
+\inferrule*[Right=specialization]{
+C_i[Q]
+}{
+I_i[P_J] \implies \forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
+}
+}
+{
+\forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
+}
+%\right]_{i\in J}
+}
+{\forall x.\, P_J(x) \implies Q(x)}
+\end{mathpar}
+
+In our example, the partial proof obligations would be
+\begin{compactitem}
+\item $C_1': \forall P.\, P(a) \implies P(f(a))$,
+\item
+\begin{tabbing}
+$C_2': \forall P.\, $\=$(\forall x\,y.\,  P(x) \wedge R(x,y) \implies P(y)) \implies$\\
+\>$\forall x\,y.\,  P(x)\wedge P(f(x)) \wedge R(x,y) \implies P(f(y))$ and
+\end{tabbing}
+\item
+\begin{tabbing}
+$C_3': \forall P.\, $\=$(\forall x\,y.\,  P(x) \wedge R(y,x) \implies P(y)) \implies$\\
+\>$\forall x\,y.\,  P(x)\wedge P(f(x)) \wedge R(y,x) \implies P(f(y))$,
+\end{tabbing}
+\end{compactitem}
+which are provable if we assume $f$ to be a function with $f(a) = a$ and $R(x,y) \implies R(f(x), f(y))$).
+
+\subsection{More introduction rules as assumptions}
+
+The additional assumption in the previous does not pose a restriction on what inductive theorems will hold for an inductive predicate $P_J$: Whenever $C_i[Q]$ is proven for all $i\in J$, then $\forall x.\, P_J(x) \implies Q_J$ holds.
+
+This changes if we want to use other introduction rules as well. If the proof for the inductive case $i\in J$ requires the introduction rules $J_i$, we need to provide all of these as assumptions in the partial inductive proofs:
+
+\[
+C_i[Q]:\ \forall P.\, (\forall j\in J_i.\, I_j[P]) \implies \forall \vec x.\,   M_i[P \wedge Q, \vec x] \implies Q(t_i(\vec x))
+\]
+
+Again, we want to discharge these assumptions before using $C_i[Q]$ in a proof for $\forall x.\, P_J(x) \implies Q(x)$:
+\begin{mathpar}
+\inferrule*[Right=induction]{
+%\left[
+{\forall i\in J.\,}
+\inferrule*[Right=MP]{
+\forall j \in J_i.\, \inferrule*{
+I_j[P_J]
+}{
+I_i[P_J]
+}
+\\
+\inferrule*[Right=specialization]{
+C_i[Q]
+}{
+(\forall j \in J_i.\, I_i[P_J]) \implies
+\cdots
+%\forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
+}
+}
+{
+\forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
+}
+%\right]_{i\in J}
+}
+{\forall x.\, P_J(x) \implies Q(x)}
+\end{mathpar}
+
+This derivation is only valid if all used introduction rules are actually available, i.e.\ $\forall i \in J.\, J_i \subseteq J$.  The previous section is a special case with $J_i=\{i\}$, where that  condition is a tautology.
 
 
-
-
+Example: TODO
 
 
 \section{Conclusion}
