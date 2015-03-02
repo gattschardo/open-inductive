@@ -38,10 +38,34 @@
 \newcommand{\carrier}[1]{\mathsf{carrier}\;#1}
 
 
+%\DeclareMathOperator*{\mywedge}{\!{\textstyle\bigwedge}\!}
+\newcommand{\mywedge}{\mathop{\textstyle\bigwedge}}
+
+
+\usepackage{isabelle}
+\usepackage{isabellesym}
+% for uniform font size
+%\renewcommand{\isastyle}{\isastyleminor}
+
+% Isabelle snippets (https://isabelle.in.tum.de/community/Generate_TeX_Snippets)
+\newcommand{\DefineSnippet}[2]{%
+   \expandafter\newcommand\csname snippet--#1\endcsname{%
+     %\begin{quote}
+     \begin{isabelle}%
+     #2
+     \end{isabelle}%
+     %\end{quote}
+     }}
+\newcommand{\Snippet}[1]{\csname snippet--#1\endcsname}
+ 
+\input{snippets/snippets}
+
 
 \title{Open Inductive Predicates}
 \author{Joachim Breitner \and Richard Molitor}
 \institute{Karlsruhe Institute of Technology}
+
+
 
 \begin{document}
 
@@ -142,7 +166,7 @@ Q(a) \\ \forall x\,y.\,  P_{\{1,2\}}(x)\wedge Q(x) \wedge R(x,y) \implies Q(y)
 {\forall x.\, P_{\{1,2\}}(x) \implies Q(x)}
 \end{mathpar}
 
-A proof of the proposition $P_{\{1,2\}}(x) \implies x \in \carrier R$ using this induction rule would produce the two proof obligations
+A proof of the proposition $\forall x.\, P_{\{1,2\}}(x) \implies x \in \carrier R$ using this induction rule would produce the two proof obligations
 \begin{compactitem}
 \item $a \in \carrier R$, and 
 \item $\forall x\,y.\,  P_{\{1,2\}}(x)\wedge x\in \carrier R\wedge R(x,y) \implies y \in\carrier R$.
@@ -177,19 +201,19 @@ Assume for a given proposition $Q$, the proof for such a proof obligation does n
 \[
 C_i[Q]:\ \forall P\, \vec x.\,   M_i[P \wedge Q, \vec x] \implies Q(t_i(\vec x))
 \]
-Note that in this \emph{partial inductive proof} the predicate $P$ is quantified over; the proof of this predicate will know anything about this, not even the introduction rule $I_i[P_J]$ itself. On the other hand this allows us to state and prove this theorem independent of any concrete definition of $P_J$.
+Note that in this \emph{partial inductive proof} the predicate $P$ is quantified over; the proof will know nothing about $P$, not even the introduction rule $I_i[P_J]$ itself. This allows us to state and prove this theorem independently of any concrete definition of $P_J$.
  
-If we now introduce an inductive predicate $P_J$ with introduction rules $I_i[P]$, $i\in J$, and the $C_i[Q]$, $i\in J$ have been proven, then the proof of $P_J(x) \implies Q(x)$ is immediate: After applying the induction theorem, each subgoal $i\in J$ can be solved by specializing the corresponding partial inductive proof $C_i[Q]$ to the actual predicate $P_J$:
+If we now introduce a concrete inductive predicate $P_J$ with introduction rules $I_i[P]$, $i\in J$, and the $C_i[Q]$, $i\in J$ have been proven, then the proof of $P_J(x) \implies Q(x)$ is immediate: After applying the induction theorem, each subgoal $i\in J$ can be solved by specializing the corresponding partial inductive proof $C_i[Q]$ to the actual predicate $P_J$:
 \begin{mathpar}
 \inferrule*[Right=induction]{
-%\left[
-{\forall i\in J.\,}
+\big[
+%{\forall i\in J.\,}
 \inferrule*[Right=specialization]{
 C_i[Q]
 }{
 \forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 }
-%\right]_{i\in J}
+\big]_{i\in J}
 }
 {\forall x.\, P_J(x) \implies Q(x)}
 \end{mathpar}
@@ -215,8 +239,8 @@ When we use such a partial inductive proof obligation in an inductive proof, we 
 
 \begin{mathpar}
 \inferrule*[Right=induction]{
-%\left[
-{\forall i\in J.\,}
+\big[
+%{\forall i\in J.\,}
 \inferrule*[Right=MP]{
 I_i[P_J] \\
 \inferrule*[Right=specialization]{
@@ -228,7 +252,7 @@ I_i[P_J] \implies \forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec
 {
 \forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 }
-%\right]_{i\in J}
+\big]_{i\in J}
 }
 {\forall x.\, P_J(x) \implies Q(x)}
 \end{mathpar}
@@ -247,34 +271,32 @@ $C_3': \forall P.\, $\=$(\forall x\,y.\,  P(x) \wedge R(y,x) \implies P(y)) \imp
 \>$\forall x\,y.\,  P(x)\wedge P(f(x)) \wedge R(y,x) \implies P(f(y))$,
 \end{tabbing}
 \end{compactitem}
-which are provable if we assume $f$ to be a function with $f(a) = a$ and $R(x,y) \implies R(f(x), f(y))$).
+which are provable for a $f$ with, say, $f(a) = a$ and $R(x,y) \implies R(f(x), f(y))$).
 
 \subsection{More introduction rules as assumptions}
 
 The additional assumption in the previous does not pose a restriction on what inductive theorems will hold for an inductive predicate $P_J$: Whenever $C_i[Q]$ is proven for all $i\in J$, then $\forall x.\, P_J(x) \implies Q_J$ holds.
 
 This changes if we want to use other introduction rules as well. If the proof for the inductive case $i\in J$ requires the introduction rules $J_i$, we need to provide all of these as assumptions in the partial inductive proofs:
-
 \[
-C_i[Q]:\ \forall P.\, (\forall j\in J_i.\, I_j[P]) \implies \forall \vec x.\,   M_i[P \wedge Q, \vec x] \implies Q(t_i(\vec x))
+C_i[Q]:\ \forall P.\, (\mywedge_{j\in J_i} I_j[P]) \implies \forall \vec x.\,   M_i[P \wedge Q, \vec x] \implies Q(t_i(\vec x))
 \]
 
 Again, we want to discharge these assumptions before using $C_i[Q]$ in a proof for $\forall x.\, P_J(x) \implies Q(x)$:
 \begin{mathpar}
 \inferrule*[Right=induction]{
-%\left[
-{\forall i\in J.\,}
+\big[
+%{\forall i\in J.\,}
 \inferrule*[Right=MP]{
-\forall j \in J_i.\, \inferrule*{
+%\mywedge_{j \in J_i}
+\big[
 I_j[P_J]
-}{
-I_j[P_J]
-}
+\big]_{j\in J_i}
 \\
 \inferrule*[Right=specialization]{
 C_i[Q]
 }{
-(\forall j \in J_i.\, I_j[P_J]) \implies
+(\mywedge_{j \in J_i} I_j[P_J]) \implies
 \cdots
 %\forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 }
@@ -282,15 +304,60 @@ C_i[Q]
 {
 \forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 }
-%\right]_{i\in J}
+\big]_{i\in J}
 }
 {\forall x.\, P_J(x) \implies Q(x)}
 \end{mathpar}
 
-This derivation is only valid if all used introduction rules are actually available, i.e.\ $\forall i \in J.\, J_i \subseteq J$.  The previous section is a special case with $J_i=\{i\}$, where that condition holds always.
+This derivation is only valid if all used introduction rules are actually available, i.e.\ $J_i \subseteq J$ for all $i\in J$.  The previous section is a special case with $J_i=\{i\}$, where that condition holds always.
 
 
 Example: TODO
+
+\section{Open inductive predicates in Isabelle}
+
+So far we have merely cast something quite obvious into formulas, hinting at the bookkeeping required to correctly modularize inductive proofs. In pen-and-paper proofs, the bookkeeping is done implicit and intuitively right. But for formalized proofs, appeals to intuition are unfortunately not yet possible. Therefore, we (conservatiely) extended Isabelle to do the bookkeeping required for open inductive predicates for us.
+
+Continuing from the example, let us first review the declaration of the inductive predicates $P_{\{1,2\}}$ and $P_{\{1,2,3\}}$ in Isabelle:
+\Snippet{inductive1}
+\Snippet{inductive2}
+
+The inductive proof of the theorem $P_{\{1,2\}}(x) \implies x\in \carrier R$ has two cases, as expected:
+\Snippet{proof1}
+
+And the corresponding proof for $P_{\{1,2,3\}}(x)$ has three, two of which are -- up to the name of the predicate -- identical:
+\Snippet{proof2}
+
+When using our support for open inductive predicates, the declaration of the predicate is modularized: We first declare the signature of the predicate, and specify the first two introduction rules, giving names to them:
+\Snippet{open_inductive}
+\Snippet{add_intros}
+
+At this point, nothing has been added to the logic yet. This is done when we close the predicate, specifying the concrete induction rules and a name:
+\Snippet{close_inductive}
+
+In order to modularize the proof of a theorem involving an open inductive predicate, we declare it first:
+\Snippet{open_theorem}
+The proofs for each case is performed separately, and stored as a theorem on its own:
+\Snippet{show_open}
+
+As we have proven the open theorem for all cases, it automatically becomes a theorem for the concrete \isa{P\isactrlsub {\isadigit{1}}\isactrlsub {\isadigit{2}}{\isacharprime}}.
+
+We can now proceed to declare a new introduction rule:
+\Snippet{add_intros2}
+
+Again, this does not affect the logic, until we demand a concrete predicate to be defined:
+\Snippet{close_inductive2}
+
+At this point, the machinery does not yet proof our open theorem for  \isa{P\isactrlsub {\isadigit{1}}\isactrlsub {\isadigit{2}}\isactrlsub {\isadigit{3}}{\isacharprime}}, as the proof would not go through, as it we have not provided the proof for the \isa{backwards} case yet. We could have done that before closing the predicate, but we can just as well do it now
+\Snippet{show_open2}
+
+Using the five commands provided by the open inductive package, we have defind the same predicates and proven the same theorems as in the example before, but we did not have to repeat the introduction rules nor the proofs when we introduced the variant.
+
+
+
+
+
+
 
 
 \section{Conclusion}
