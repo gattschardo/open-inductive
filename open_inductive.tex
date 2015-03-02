@@ -268,13 +268,13 @@ Again, we want to discharge these assumptions before using $C_i[Q]$ in a proof f
 \forall j \in J_i.\, \inferrule*{
 I_j[P_J]
 }{
-I_i[P_J]
+I_j[P_J]
 }
 \\
 \inferrule*[Right=specialization]{
 C_i[Q]
 }{
-(\forall j \in J_i.\, I_i[P_J]) \implies
+(\forall j \in J_i.\, I_j[P_J]) \implies
 \cdots
 %\forall \vec x.\, M_i[P_J\wedge Q, \vec x] \implies Q(t_i(\vec x))
 }
@@ -287,7 +287,7 @@ C_i[Q]
 {\forall x.\, P_J(x) \implies Q(x)}
 \end{mathpar}
 
-This derivation is only valid if all used introduction rules are actually available, i.e.\ $\forall i \in J.\, J_i \subseteq J$.  The previous section is a special case with $J_i=\{i\}$, where that  condition is a tautology.
+This derivation is only valid if all used introduction rules are actually available, i.e.\ $\forall i \in J.\, J_i \subseteq J$.  The previous section is a special case with $J_i=\{i\}$, where that condition holds always.
 
 
 Example: TODO
