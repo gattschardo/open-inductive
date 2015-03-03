@@ -1,0 +1,5 @@
+session Open_Inductive_Tests = "HOL" +
+   options [quick_and_dirty]
+   theories
+     Test1
+
