@@ -41,6 +41,11 @@
 %\DeclareMathOperator*{\mywedge}{\!{\textstyle\bigwedge}\!}
 \newcommand{\mywedge}{\mathop{\textstyle\bigwedge}}
 
+% http://tex.stackexchange.com/a/2645/15107
+\makeatletter
+\newcommand{\nolisttopbreak}{\par\nobreak\@afterheading}
+\makeatother
+
 
 \usepackage{isabelle}
 \usepackage{isabellesym}
@@ -72,60 +77,29 @@
 \maketitle
 
 \begin{abstract}
-TODO
+Inductively defind predicates are inherently modular. This is regularly used in pen-and-paper proofs.
+
+We present the theory of \emph{open inductive predicates} to make this often implicitly used modularity explicit, and demonstate how to use it in interactive theorem provers (Isabelle/HOL in this case) as well.
 \end{abstract}
 
 \section{Introduction}
 
-Inductively defined predicates are the bread and butter of many formal works, from programming languages semantics over types and logics to abstract algebra.
+\begin{quote}
+“In [42], Mueller et al. introduce the WizWoz abstract virtual machine, provide a natural semantics and prove, by induction on the rules of the semantics, that it is tenacious. In this work, we extend the semantics machine by a rule for categorical nonsensical shuffling. The extended WizWoz machine is still tenacious: We prove tenaciousness for the additional case; see [42] for the remaining cases.”
+\end{quote}
 
-As a running example, consider the inductively defined semantics relation $\Downarrow$ for a lambda calculus, given by the introduction rules in Figure~\ref{fig:launchbury}, and the theorem $\sred\Gamma e \Delta v \implies \dom\Gamma \subseteq \dom\Delta$. We would prove this by induction on the deriviation of $\Downarrow$, which would require proving one case per induction rule.
+Inductively defined predicates -- the bread and butter of many formal works, from programming languages semantics over types and logics to abstract algebra -- are inherently modular: If we add, remove or change one of the introduction rules the predicates was defined with, then in a proof by rule induction only the proof obligation of the corresponding case changes; the others stay the same.
 
-\begin{figure}[b]
-\begin{mathpar}
-\inferrule
-{ }
-{\sred{\Gamma}{\sLam xe}{\Gamma}{\sLam xe}}
-\sRule{Lam}
-\and
-\inferrule
-{\sred{\Gamma}e{\Delta}{\sLam y e'}\\ \sred{\Delta}{e'[x/y]}{\Theta}{v}}
-{\sred\Gamma{\sApp e x}\Theta v}
-\sRule{App}
-\and
-\inferrule
-{\sred\Gamma e \Delta v}
-{\sred{\Gamma, x\mapsto e} x {\Delta, x\mapsto v}{v}}
-\sRule{Var}
-\and
-\inferrule
-{\text{$x$ fresh}\\ \sred{\Gamma,x\mapsto e'} e \Delta v}
-{\sred{\Gamma}{\sLet{x = e'}e} \Delta v}
-\sRule{Let}
-\end{mathpar}
-\caption{A typical inductively defined semantics (\cite{launchbury}, simplified)}
-\label{fig:launchbury}
-\end{figure}
+This is often exploited in pen-and-paper-proofs that discuss several variants of, say, a natural semantics, or in papers that extend existing definitions with their own rules -- as in the hypothetical example above. The modularity of inductively defined predicates is so obvious that little fuzz is made about it.
 
+Such convenience is not available to users of interactive theorem provers, as to the machine, two similarly defined inductive predicates are still different predicates, and “see the other proof” is not (yet) a admissible proof tacktic. So one has no choice but to copy the common parts of the definitions and the proofs. One might then manually and tediously extract repeated proofs as lemmas of their own. In either case, maintaining such redudancy will cause headaches when further changes need to be made. Furthermore, this does not scale if many variants of one predicate are needed.
 
-Later, we might want to discuss a slightly different semantics, i.e. one where rule $\sRule{Var}$ was swapped for
-\begin{mathpar}
-\inferrule
-{\sred{\Gamma, x\mapsto e} e {\Delta}{v}} 
-{\sred{\Gamma, x\mapsto e} x {\Delta}{v}}
-\sRule{Var'}.
-\end{mathpar}
-If we claim that the lemma above holds for the slighly modified semantics, as well, we have to prove it.
+Our aim is to make such convenience as in the pen-and-paper proof available to the users of interactive theorem provers. In order to do so, we formalize the intuition behind these shortcuts and introduce the concept of \emph{open inductive predicates}. A theorem involving such an open predicate can be proven independently for each inductive case. Concrete instances for the predicate can be produced by specifying the actual set of introduction rules to be used, and all those theorems that have proofs for all used introduction rules are then automatically proved for the concrete instance.
 
-In a pen-and-paper proof, we would not write the complete proof by induction again, as -- quite obvious to anyone familiar with inductive proofs -- three of the four subproofs would be identical. Instead, we would only provide the proof for the case \sRule{Var'}.
-
-But when working with an interactive theorem prover, such convenience is not easily possible: We would have to copy-and-paste the definition of $\Downarrow$ and the proof, and then adjust the rule \sRule{Var} and corresponding proof case. We might abstract the common parts into lemmas of their own, but that requires carefully stating the proof obligations of that case as a separate lemma. In either case, maintaining such redudancy will cause headaches when further changes need to be made. Furthermore, this does not scale if many variants of one predicate are needed.
-
-Our aim is to make such convenience as in the pen-and-paper proof available to the users of interactive theorem provers. In order to do so, we formalize the intuition behind the shortcuts, introducing the concept of \emph{open inductive predicates}. An inductive proof of a theorem involving such an open predicate can be proven for a single inductive case at once. For each concrete instance of the predicate, when the set of introduction rules is finalized, all those theorems are made available that have been shown for all used introduction rules.
-
-\noindent Our contributions are
+\noindent Our contributions are\nolisttopbreak
 \begin{itemize}
 \item We introduce the theory of open inductive predicates to formalize the folklore around inductively defined predicate and their modularization.
+\item We point out what such an inductive proof may assume about the predicate in order for the modularization to be sound.
 \item We describe an implementation of open inductive predicates as a conservative extension to the interactive theorem prover Isabelle/HOL.
 \end{itemize}
 
