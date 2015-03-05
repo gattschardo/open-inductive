@@ -555,9 +555,9 @@ fun install_thm binding thm = Local_Theory.note ((binding, []), [thm]) #> snd
 
 fun rename_free name typ name' =
   let
-    fun rename (v as Free (n, _)) =
+    fun rename (v as Free (n, t0)) =
           if n = name then
-            Free (name', typ)
+            Free (name', if is_some typ then the typ else t0)
           else v
       | rename x = x
   in
@@ -576,7 +576,7 @@ fun read_goal ctxt bind prop =
 
 fun rewrite_goal ctxt pname ty cname =
   read_goal ctxt [(Binding.name pname, ty, NoSyn)]
-  #> rename_free pname (the ty |> Syntax.read_typ ctxt) cname
+  #> rename_free pname (if is_some ty then SOME (Syntax.read_typ ctxt (the ty)) else NONE) cname
 
 fun gen_pname pname =
   implies_intr_hyps #> Thm.generalize ([], [pname]) 2
