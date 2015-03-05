@@ -34,7 +34,7 @@ sig
     open_thm Symtab.table -> Proof.state
   val close_inductive: Proof.context -> string -> string list -> string ->
     open_predicate Symtab.table -> open_thm Symtab.table ->
-    Proof.context * (string * thm) list
+    (string * thm) list * Proof.context
 
 
   (** outer syntax **)
@@ -55,7 +55,7 @@ struct
 (*** Pretty-printing ***)
 
 fun pretty_thms ctxt ts =
-  map (Display.pretty_thm_item ctxt) ts |> Pretty.separate "\n" |> Pretty.block
+  map (Display.pretty_thm_item ctxt) ts |> Pretty.fbreaks |> Pretty.block
 
 fun pretty_typs ctxt ts =
   Pretty.block (map (Syntax.pretty_typ ctxt) ts)
@@ -109,10 +109,9 @@ fun zip_results [] = []
 
 fun make_inductive pred_name close_name t raw_intros lthy =
   let
-    val bind = Binding.name
-    fun bind' s = (bind s, [])
+    fun bind' s = (Binding.name s, [])
     val intros = map (fn (n, p) => (bind' n, p)) raw_intros
-    val cnames = [(bind pred_name, t, NoSyn)]
+    val cnames = [(Binding.name pred_name, t, NoSyn)]
     val pnames = []
     val monos = []
     val flags =
@@ -131,41 +130,42 @@ fun make_inductive pred_name close_name t raw_intros lthy =
     Inductive.gen_add_inductive_i Inductive.add_ind_def flags vars' [] intrs' monos lthy
   end
 
-fun prepare_intro pred_name t intro s lthy =
+fun prepare_intro pred_name raw_typ intro spec lthy =
   let
-    val ({induct, ...}, lthy') = make_inductive pred_name pred_name t [(intro, s)] lthy
+    val ({induct, ...}, lthy') = make_inductive pred_name pred_name raw_typ [(intro, spec)] lthy
   in
-   (lthy', induct)
+   (induct, lthy')
   end
 
-fun add_assms intros pred_name t ctxt =
+fun add_assms intros pred_name raw_typ ctxt =
   let
-    val pred_fix = [(Binding.name pred_name, t, NoSyn)]
-    val prop = map (fn (_, spec) => ((Binding.empty, []), spec)) intros
+    val pred_fix = [(Binding.name pred_name, raw_typ, NoSyn)]
+    val prop = map (fn (_, spec) => (Attrib.empty_binding, spec)) intros
     val ((_, ps), ctxt') = ctxt
       (*|> Proof_Context.set_mode Proof_Context.mode_abbrev*)
       |> Specification.read_spec pred_fix prop
-    val assm_thms = map snd ps
+    val assm_props = map snd ps
     val assm_names = map (fn (name, _) =>
       (Binding.name name |> Binding.qualify true pred_name, [])) intros
-    val assms = map (fn (n, thm) => (n, [(thm, [])])) (assm_names ~~ assm_thms)
+    val assms = map (fn (n, thm) => (n, [(thm, [])])) (assm_names ~~ assm_props)
   in
     Proof_Context.add_assms_i Assumption.assume_export assms ctxt'
     |> snd
   end
 
-fun rewrite_prop pred t intro_name intro_spec ctxt p =
+fun rewrite_prop pred t intro_name intro_spec ctxt raw_prop =
   let
-    val (ctxt', ind_thm) = prepare_intro pred t intro_name intro_spec ctxt
-    val pp = Syntax.read_prop ctxt' p
+    val (ind_thm, ctxt') = prepare_intro pred t intro_name intro_spec ctxt
+    val prop = Syntax.read_prop ctxt' raw_prop
     val thy = Proof_Context.theory_of ctxt
-    val cp = cterm_of thy pp
-    val p_as_goal = Goal.init cp
+    val cprop = cterm_of thy prop
+    val p_as_goal = Goal.init cprop
     val ind_tac = etac ind_thm 1 (* TODO: use real induction *)
   in
     case ind_tac p_as_goal |> Seq.pull of
       NONE => error "rewrite_prop: could not apply induction theorem"
     | SOME (p, _) => (prems_of p |> hd, ctxt)
+    (* ctxt' discarded on purpose! *)
   end
 
 
@@ -173,56 +173,52 @@ fun rewrite_prop pred t intro_name intro_spec ctxt p =
 
 (** Open Predicates **)
 
-type thm_handle = string
-type intro = string * string
+datatype open_predicate = Open_Predicate of
+  {typ: string option, (* raw_typ of the predicate, must be "... => bool" *)
+   thms: string list, (* names of open_theorems  that use this predicate *)
+   intros: (string * string) list} (* introduction rules, format: (name * raw_spec) *)
 
-type open_predicate =
-  {typ: string option,
-   thms: thm_handle list,
-   intros: intro list}
-
-val empty_open_pred =
+val empty_open_pred = Open_Predicate
   {typ = NONE,
    thms = [],
    intros = []}
 
-fun pred_add_typ t ctxt msg {typ, thms, intros} =
-  if is_some typ andalso not (t = typ) then
-    (if is_some t then
+fun pred_add_typ typ' ctxt msg (Open_Predicate {typ, thms, intros}) =
+  if is_some typ andalso not (typ' = typ) then
+    (if is_some typ' then
        error ("Can't re-type predicate, was " ^ (the typ |> str_typ ctxt) ^
-         ", would become " ^ (the t |> str_typ ctxt))
+         ", would become " ^ (the typ' |> str_typ ctxt))
      else
        error ("Can't delete type from predicate, was " ^ (the typ |> str_typ ctxt)))
   else
     (Pretty.writeln msg;
-     {typ = t,
+     Open_Predicate {typ = typ',
       thms = thms,
       intros = intros})
 
-fun pred_add_intro n i {typ, thms, intros} =
-  {typ = typ,
-   thms = thms,
-   intros = (n, i)::intros}
+fun pred_add_intro name raw_spec (Open_Predicate {typ, thms, intros}) =
+  (Open_Predicate {
+    typ = typ,
+    thms = thms,
+    intros = (name, raw_spec)::intros})
 
-fun pred_add_thm t {typ, thms, intros} =
-  {typ = typ,
-   thms = t::thms,
-   intros = intros}
-
-val get_intro_name = fst
-val get_intro_spec = snd
+fun pred_add_thm thm_name (Open_Predicate {typ, thms, intros}) =
+  Open_Predicate {
+    typ = typ,
+    thms = thm_name::thms,
+    intros = intros}
 
 fun pred_merge (a, b) =
   let
-    val {typ = ta, thms = a_thms, intros = a_intrs} = a
-    val {typ = tb, thms = b_thms, intros = b_intrs} = b
+    val Open_Predicate {typ = ta, thms = a_thms, intros = a_intrs} = a
+    val Open_Predicate {typ = tb, thms = b_thms, intros = b_intrs} = b
   in
     if ta <> tb then
       a
     else
-      {typ = ta,
+      Open_Predicate {typ = ta,
        thms = a_thms @ b_thms |> sort_distinct string_ord,
-       intros = AList.merge (op =) (op =) (a_intrs, b_intrs)}
+       intros = AList.merge (op =) (op =) (a_intrs, b_intrs)} (* TODO fix op= *)
   end
 
 structure Open_Preds = Theory_Data
@@ -236,35 +232,32 @@ val pred_lookup = Symtab.lookup o Open_Preds.get
 fun pred_update' f k =
   Symtab.map_default (k, empty_open_pred) f
 
-fun pred_update f k thy =
-  Open_Preds.put (pred_update' f k (Open_Preds.get thy)) thy
+fun pred_update (f: open_predicate -> open_predicate) k thy =
+  Open_Preds.map (pred_update' f k) thy
 
 
 
 (** Open Theorems **)
 
-type open_proof = string list * Proof.context * thm
-type intro_proof = string * (string * open_proof) list
-
-type open_thm =
+datatype open_thm = Open_Thm of
   {prop: string,
    preds: string list,
-   proofs: intro_proof list,
-   direct_proof: open_proof option}
+   proofs: (string * (string * (string list * Proof.context * thm)) list) list,
+   direct_proof: (string list * Proof.context * thm) option}
 
 val empty_thm =
-  {prop = "",
+  Open_Thm {prop = "",
    preds = [],
    proofs = [],
    direct_proof = NONE}
 
 fun make_open_thm prop preds =
-  {prop = prop,
+  Open_Thm {prop = prop,
    preds = preds,
    proofs = [],
    direct_proof = NONE}
 
-fun add_intro_proof pred intro assms ctxt thm {prop, preds, proofs, direct_proof} =
+fun add_intro_proof pred intro assms ctxt thm (Open_Thm {prop, preds, proofs, direct_proof}) =
   let
     val prfs =
       case AList.lookup (op =) proofs pred of
@@ -272,35 +265,35 @@ fun add_intro_proof pred intro assms ctxt thm {prop, preds, proofs, direct_proof
       | SOME l => l
     val prfs' = AList.update (op =) (intro, (assms, ctxt, thm)) prfs
   in
-    {prop = prop,
+    Open_Thm {prop = prop,
      preds = preds,
      proofs = AList.update (op =) (pred, prfs') proofs,
      direct_proof = direct_proof}
   end
 
-fun add_direct_proof assms ctxt thm {prop, preds, proofs, ...} =
-  {prop = prop,
+fun add_direct_proof assms ctxt thm (Open_Thm {prop, preds, proofs, ...}) =
+  Open_Thm {prop = prop,
    preds = preds,
    proofs = proofs,
    direct_proof = SOME (assms, ctxt, thm)}
 
-fun thm_merge (a, b) =
+fun thm_merge (Open_Thm a, Open_Thm b) =
   let
     val {prop = pa, preds = a_preds, proofs = a_prfs, direct_proof = da} = a
     val {prop = pb, preds = b_preds, proofs = b_prfs, direct_proof = db} = b
     fun merge_prfs a b =
-      AList.join (op =) (K (AList.merge (op =) (K true))) (a, b)
+      AList.join (op =) (K (AList.merge (op =) (K true))) (a, b) (* TODO fix op= *)
   in
     if pa <> pb orelse a_preds <> b_preds then
-      a
+      Open_Thm a
     else
-      {prop = pa,
+      Open_Thm {prop = pa,
        preds = a_preds,
        proofs = merge_prfs a_prfs b_prfs,
        direct_proof = if is_some da then da else db}
   end
 
-structure Open_Thms = Theory_Data
+structure Open_Thms = Theory_Data (* TODO merge slots! *)
   (type T = open_thm Symtab.table
    val empty = Symtab.empty
    val extend = I
@@ -308,12 +301,11 @@ structure Open_Thms = Theory_Data
 
 val thm_lookup = Symtab.lookup o Open_Thms.get
 
-fun thm_update' k f =
+fun thm_update' f k =
   Symtab.map_default (k, empty_thm) f
 
-fun thm_update (k:string) (f:open_thm -> open_thm) thy =
-  Open_Thms.put (thm_update' k f (Open_Thms.get thy)) thy
-
+fun thm_update (f:open_thm -> open_thm) k thy =
+  Open_Thms.map (thm_update' f k) thy
 
 
 (*** Commands ***)
@@ -324,8 +316,8 @@ fun pred_register' update ctxt n t =
   let
     val msg = [Pretty.str "Registered open inductive predicate ", pretty_pred n] @
        (case t of
-          SOME typ => [Pretty.str " with type ", pretty_typ ctxt typ, Pretty.str "."]
-        | NONE => [Pretty.str " without type."])
+          SOME typ => [Pretty.str " with type ", pretty_typ ctxt typ]
+        | NONE => [Pretty.str " without type"])
        |> Pretty.block
   in
     update (pred_add_typ t ctxt msg) n
@@ -345,11 +337,9 @@ fun pred_register (b, t, _) thy =
 val open_inductive_cmd =
   fold (pred_register #> Local_Theory.background_theory)
 
-val oi_parser = Parse.fixes
-
 val () = Outer_Syntax.local_theory @{command_spec "open_inductive"}
           "open inductive predicate definition"
-          (oi_parser >> open_inductive_cmd)
+          (Parse.fixes >> open_inductive_cmd)
 
 
 (** Defining Intros **)
@@ -357,7 +347,7 @@ val () = Outer_Syntax.local_theory @{command_spec "open_inductive"}
 fun gen_intro_register lookup update ctxt pred_name intro_name raw_prop tab_or_thy =
   case lookup tab_or_thy pred_name of
     NONE => error ("No such open inductive predicate: " ^ pred_name)
-  | SOME p =>
+  | SOME (Open_Predicate p) =>
     let
       val prop = Syntax.read_term ctxt raw_prop
       val _ (* typecheck only*) = prepare_intro pred_name (#typ p) intro_name raw_prop ctxt
@@ -377,7 +367,7 @@ fun add_intro_cmd (pred_name, (intro_name, prop)) lthy =
   Local_Theory.background_theory
     (gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop) lthy
 
-val ic_parser = Parse.name -- (Parse.name -- (Parse.$$$ ":" |-- Parse.prop))
+val ic_parser = Parse.name -- (Parse.name -- (@{keyword ":"} |-- Parse.prop))
 
 val () = Outer_Syntax.local_theory @{command_spec "add_intro"}
           "adds intro rule to open inductive predicate"
@@ -386,18 +376,25 @@ val () = Outer_Syntax.local_theory @{command_spec "add_intro"}
 
 (** Defining Theorems **)
 
+fun maybe_typ lookup tab name =
+  case lookup tab name of
+    (SOME (Open_Predicate {typ, ...})) => typ
+  | _ => NONE
+
 fun thm_reg_preds p_update nam = fold (p_update (pred_add_thm nam))
 
 fun thm_register' p_lookup ctxt nam raw_prop tab_or_thy =
   let
-    val prop = raw_prop |> Syntax.read_term ctxt
-    fun known (Free (n, _)) = Long_Name.explode n |> List.last |> cons
+    val prop = raw_prop |> Syntax.read_prop ctxt
+    fun known (Free (n, _)) = Long_Name.explode n |> List.last |> cons (* TODO *)
       | known _ = I
     val opreds = Term.fold_aterms known prop []
       |> filter (p_lookup tab_or_thy #> is_some)
       |> sort_distinct string_ord
     val pred_fixes = opreds |> map (fn p =>
-      (Binding.name p, p_lookup tab_or_thy p |> the |> #typ, NoSyn))
+      (Binding.name p,
+       maybe_typ p_lookup tab_or_thy p,
+       NoSyn))
     val _ (* typecheck only *) =
       Specification.read_spec pred_fixes [((Binding.empty, []), raw_prop)] ctxt
   in
@@ -413,29 +410,27 @@ fun open_theorem ctxt nam raw_prop p_tab t_tab =
     val opreds = thm_register' Symtab.lookup ctxt nam raw_prop p_tab
   in
     (thm_reg_preds pred_update' nam opreds p_tab,
-     thm_update' nam (K (make_open_thm raw_prop opreds)) t_tab)
+     thm_update' (K (make_open_thm raw_prop opreds)) nam t_tab)
   end
 
 
 fun thm_register nam raw_prop thy =
   let
-    val ctxt = Proof_Context.init_global thy
+    val ctxt = Proof_Context.init_global thy (* TODO *)
     val opreds = thm_register' pred_lookup ctxt nam raw_prop thy
   in
     thm_reg_preds pred_update nam opreds thy
-    |> thm_update nam (K (make_open_thm raw_prop opreds))
+    |> thm_update (K (make_open_thm raw_prop opreds)) nam
   end
 
 
 fun open_theorem_cmd (n, prop) =
    Local_Theory.background_theory (thm_register n prop)
 
-val ot_parser = Parse.name --
-   ((Parse.maybe (Parse.$$$ "shows")) |-- Parse.prop)
-
 val () = Outer_Syntax.local_theory @{command_spec "open_theorem"}
           "declares open theorem"
-          (ot_parser >> open_theorem_cmd)
+          (Parse.name -- ((Parse.maybe @{keyword "shows"}) |-- Parse.prop)
+           >> open_theorem_cmd)
 
 
 
@@ -449,19 +444,22 @@ fun many_thms_err thmss ctxt = error ("More than one theorem proved? Have: " ^
 
 fun find_preds p_lookup p_tab intro_names thm =
   let
-    fun get_intrs pred_name = p_lookup p_tab pred_name |> the |> #intros
+    fun get_intrs pred_name =
+      case p_lookup p_tab pred_name of
+        SOME (Open_Predicate {intros, ...}) => intros
+      | _ => []
     fun match_pred intro_name pred_name =
-      case filter (get_intro_name #> (curry op =) intro_name) (get_intrs pred_name) of
+      case filter (fst #> (curry op =) intro_name) (get_intrs pred_name) of
         [] => NONE
       | i::_ =>
-        SOME ((pred_name, p_lookup p_tab pred_name |> the |> #typ), (intro_name, get_intro_spec i))
+        SOME ((pred_name, maybe_typ p_lookup p_tab pred_name), (intro_name, snd i))
     val intrs = map (fn iname => first_res (match_pred iname) iname (#preds thm)) intro_names
     val fails = zip_errors intrs
   in
-    if fails <> [] then
+    if not (null fails) then
       Err fails
     else
-      Res (zip_results intrs |> AList.group (fn ((a, _), (b, _)) => a = b))
+      Res (zip_results intrs |> AList.group (eq_fst (op =)))
   end
 
 fun intro_err preds intro_name =
@@ -472,20 +470,20 @@ fun save_assms ((p, t), p_assms) = add_assms p_assms p t
 fun gen_show_open p_lookup t_lookup t_update ctxt t_cont thm_name intro_name assms p_tab t_tab =
   let
     val othm =
-      case t_lookup t_tab thm_name of
-        SOME t => t
-      | NONE => thm_err thm_name
+      (case t_lookup t_tab thm_name of
+         SOME (Open_Thm t) => t
+       | NONE => thm_err thm_name)
     val intro_err' = intro_err (#preds othm)
     val assms' =
-      case find_preds p_lookup p_tab (intro_name::assms) othm of
-        Err n => intro_err' (hd n)
-      | Res r => r
+      (case find_preds p_lookup p_tab (intro_name::assms) othm of
+         Err n => intro_err' (hd n)
+       | Res r => r)
     val (pred_name, t) = hd assms' |> fst
     val intro_spec =  hd assms' |> snd |> hd |> snd
     val (prop, ctxt) = #prop othm |> rewrite_prop pred_name t intro_name intro_spec ctxt
     val ctxt' = fold save_assms assms' ctxt
     fun after_qed pred [[thm]] =
-          t_update thm_name (add_intro_proof pred intro_name assms ctxt' thm) t_tab |> t_cont
+          t_update (add_intro_proof pred intro_name assms ctxt' thm) thm_name t_tab |> t_cont
       | after_qed _ thmss = many_thms_err thmss ctxt
   in
     Proof.theorem NONE (after_qed pred_name) [[(prop, [])]] ctxt'
@@ -494,30 +492,29 @@ fun gen_show_open p_lookup t_lookup t_update ctxt t_cont thm_name intro_name ass
 val show_intro =
   gen_show_open Symtab.lookup Symtab.lookup thm_update'
 
-val name_from_bindfix =
-  (Binding.name_of o (fn (b, _, _) => b))
+fun name_of_bindfix (b, _, _) = Binding.name_of b
 
 fun show_intro_cmd lemma_name intro_name assms lthy =
   let
     val thy = Proof_Context.theory_of lthy
     fun cont thy = Local_Theory.background_theory (K thy)
-    val assms' = map name_from_bindfix assms
+    val assms' = map name_of_bindfix assms
   in
     gen_show_open pred_lookup thm_lookup thm_update lthy cont lemma_name intro_name assms' thy thy
   end
 
-fun gen_show_open_direct p_lookup t_lookup t_update ctxt t_cont thm_name assms p_tab t_tab =
+fun gen_show_open_direct p_lookup t_lookup t_update lthy t_cont thm_name assms p_tab t_tab =
   let
     val open_thm =
-      case t_lookup t_tab thm_name of
-        NONE => thm_err thm_name
-      | SOME t => t
+      (case t_lookup t_tab thm_name of
+         NONE => thm_err thm_name
+       | SOME (Open_Thm t) => t)
     val assms' =
-      case find_preds p_lookup p_tab assms open_thm of
-        Err n => intro_err (#preds open_thm) (hd n)
-      | Res r => r
-    val lthy' = fold save_assms assms' ctxt
-    fun after_qed [[thm]] = (t_update thm_name (add_direct_proof assms lthy' thm) t_tab) |> t_cont
+      (case find_preds p_lookup p_tab assms open_thm of
+         Err n => intro_err (#preds open_thm) (hd n)
+       | Res r => r)
+    val lthy' = fold save_assms assms' lthy
+    fun after_qed [[thm]] = (t_update (add_direct_proof assms lthy' thm) thm_name t_tab) |> t_cont
       | after_qed thmss = many_thms_err thmss
   in
     Proof.theorem NONE after_qed [[(#prop open_thm |> Syntax.read_prop lthy', [])]] lthy'
@@ -529,8 +526,8 @@ val show_open =
 fun show_open_cmd thm_name assms lthy =
   let
     val thy = Proof_Context.theory_of lthy
-    fun cont t' = Local_Theory.background_theory (K t')
-    val assms' = map name_from_bindfix assms
+    fun cont thy' = Local_Theory.background_theory (K thy')
+    val assms' = map name_of_bindfix assms
   in
     gen_show_open_direct pred_lookup thm_lookup thm_update lthy cont thm_name assms' thy thy
   end
@@ -538,34 +535,29 @@ fun show_open_cmd thm_name assms lthy =
 fun show_open_switch ((thm_name, ""), assms) = show_open_cmd thm_name assms
   | show_open_switch ((thm_name, intro_name), assms) = show_intro_cmd thm_name intro_name assms
 
-val so_parser = Parse.name -- Scan.optional (Parse.$$$ "for" |-- Parse.name) "" --
-  Scan.optional (Parse.$$$ "assumes" |-- Parse.fixes) []
-
 val () = Outer_Syntax.local_theory_to_proof @{command_spec "show_open"}
-          "shows an open theorem for an intro rule (or directly)"
-          (so_parser >> show_open_switch)
+  "shows an open theorem for an intro rule (or directly)"
+  (Parse.name -- Scan.optional (@{keyword "for"} |-- Parse.name) "" --
+     Scan.optional (@{keyword "assumes"} |-- Parse.fixes) []
+   >> show_open_switch)
 
 
 
 (** Closing Predicates **)
 
-val elem = member (op =)
-
-fun install_thm binding thm = Local_Theory.note ((binding, []), [thm]) #> snd
-
 fun rename_free name typ name' =
   let
-    fun rename (v as Free (n, t0)) =
+    fun rename (v as Free (n, typ0)) =
           if n = name then
-            Free (name', if is_some typ then the typ else t0)
+            Free (name', if is_some typ then the typ else typ0)
           else v
-      | rename x = x
+      | rename a = a
   in
     map_aterms rename
   end
 
 fun make_tac induct i intro_rules =
-  etac induct i THEN (EVERY1 (map (single #> solve_tac) intro_rules))
+  etac induct i THEN EVERY1 (map (single #> solve_tac) intro_rules)
 
 fun read_goal ctxt bind prop =
   let
@@ -579,7 +571,7 @@ fun rewrite_goal ctxt pname ty cname =
   #> rename_free pname (if is_some ty then SOME (Syntax.read_typ ctxt (the ty)) else NONE) cname
 
 fun gen_pname pname =
-  implies_intr_hyps #> Thm.generalize ([], [pname]) 2
+  implies_intr_hyps #> Thm.generalize ([], [pname]) 2 (* TODO make it good *)
 
 fun clear_hyps cname ctxt' ctxt hyp_thms thm =
   let
@@ -596,23 +588,24 @@ fun hyps_from_assms assms named_intros =
   filter (member (fn ((b, _), a) => a = b) assms) named_intros |> map snd
 
 fun warn_missing thm_name intro_names what =
-  warning ("Cannot close open theorem \"" ^ thm_name ^ "\", missing " ^ what ^
+  warning ("Cannot close open theorem " ^ quote thm_name ^ ", missing " ^ what ^
     " " ^ (commas intro_names))
 
 fun get_missing named_intros assms =
-  filter ((AList.lookup (op =) named_intros) #> is_none) assms
+  filter (AList.lookup (op =) named_intros #> is_none) assms
 
 fun finish_proof pname close_name name ptyp prop induct rules named_intrs ctxt =
   let
-    val goal = if pname <> close_name
-      then rewrite_goal ctxt pname ptyp close_name prop
-      else read_goal ctxt [] prop
+    val goal =
+      if pname <> close_name
+        then rewrite_goal ctxt pname ptyp close_name prop
+        else read_goal ctxt [] prop
     val hyp_rules = rules |> map (fn (a, c, r) =>
       (hyps_from_assms a named_intrs, c, gen_pname pname r))
-    fun tac _ =  (map snd named_intrs) ~~ hyp_rules
+    val tac =  (map snd named_intrs) ~~ hyp_rules
       |> map (fn (h, (hs, ctxt', b)) => clear_hyps close_name ctxt' ctxt (h :: hs) b)
       |> make_tac induct 1
-    val thm = Goal.prove ctxt [] [] goal tac
+    val thm = Goal.prove ctxt [] [] goal (K tac)
   in
     (name, thm)
   end
@@ -624,12 +617,12 @@ fun close_direct ctxt pname ptyp named_intrs close_name (name, prop, (assms, ctx
       else read_goal ctxt [] prop
     val missing = get_missing named_intrs assms
     val hyps = hyps_from_assms assms named_intrs
-    val proof' = gen_pname pname proof
+    val hyp_thm = gen_pname pname proof
       |> clear_hyps close_name ctxt' ctxt hyps
-    fun tac _ = etac proof' 1
+    val tac = etac hyp_thm 1
   in
     if missing = [] then
-      (name, Goal.prove ctxt [] [] goal tac)::thms
+      (name, Goal.prove ctxt [] [] goal (K tac))::thms
     else
       (warn_missing name missing "introduction rules:"; thms)
   end
@@ -645,12 +638,12 @@ fun gen_close t_lookup lthy pred_name pred intro_names close_name t_tab =
     val lemmas0 = map (t_lookup t_tab) lemma_names
       |> zip_options lemma_names
 
-    val lemmas = filter (fn (_, {direct_proof = NONE, ...}) => true | _ => false) lemmas0
-      |> map (fn (n, {prop, proofs, ...}) =>
+    val lemmas = filter (fn (_, Open_Thm {direct_proof = NONE, ...}) => true | _ => false) lemmas0
+      |> map (fn (n, Open_Thm {prop, proofs, ...}) =>
         (n, prop, case AList.lookup (op =) proofs pred_name of NONE => [] | SOME l => l))
 
-    val directs = filter (fn (_, {direct_proof = SOME _, ...}) => true | _ => false) lemmas0
-      |> map (fn (n, {prop, direct_proof, ...}) => (n, prop, the direct_proof))
+    val directs = filter (fn (_, Open_Thm {direct_proof = SOME _, ...}) => true | _ => false) lemmas0
+      |> map (fn (n, Open_Thm {prop, direct_proof, ...}) => (n, prop, the direct_proof))
 
     val ptyp = #typ pred
 
@@ -659,13 +652,13 @@ fun gen_close t_lookup lthy pred_name pred intro_names close_name t_tab =
         val rs = map (AList.lookup (op =) proofs) intro_names
           |> filter is_some
           |> map the
-        val missing_assms = map (fn (a, _, _) => get_missing named_intrs a) rs |> List.concat
+        val missing_assms = (flat oo map) (fn (a, _, _) => get_missing named_intrs a) rs
       in
         if length rs <> length intro_names then
           (warn_missing name
             (intro_names |> filter (is_none o (AList.lookup (op =) proofs))) "proofs for";
            thms)
-        else if missing_assms <> [] then
+        else if not (null missing_assms) then
           (warn_missing name missing_assms "introduction rules:"; thms)
         else
           (finish_proof pred_name close_name name ptyp prop induct rs named_intrs lthy)::thms
@@ -677,9 +670,9 @@ fun gen_close t_lookup lthy pred_name pred intro_names close_name t_tab =
         pretty_pred close_name, Pretty.str "."]),
       Pretty.block ([Pretty.str "Candidates for closing: "] @
         Pretty.commas (map pretty_lemma lemma_names))])));
-    (lthy',
-     fold (close_lemma lthy') lemmas []
-     |> fold (close_direct lthy' pred_name ptyp named_intrs close_name) directs)
+    (fold (close_lemma lthy') lemmas []
+     |> fold (close_direct lthy' pred_name ptyp named_intrs close_name) directs,
+     lthy')
   end
 
 fun check_close p_lookup t_lookup ctxt pred_name intro_names close_name p_tab =
@@ -687,10 +680,10 @@ fun check_close p_lookup t_lookup ctxt pred_name intro_names close_name p_tab =
     val pred =
       case p_lookup p_tab pred_name of
         NONE => error ("Undefined open predicate: " ^ pred_name)
-      | SOME p => p
-    val pred_intros = #intros pred |> map get_intro_name
+      | SOME (Open_Predicate p) => p
+    val pred_intros = #intros pred |> map fst
   in
-    case find_first (not o elem pred_intros) intro_names of
+    case find_first (not o member (op =) pred_intros) intro_names of
       SOME x => error ("No introduction rule named " ^ x ^
         " defined in open predicate " ^ pred_name)
     | NONE => gen_close t_lookup ctxt pred_name pred intro_names close_name
@@ -702,9 +695,9 @@ val close_inductive =
 
 fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
   let
-    val intro_names = map name_from_bindfix intro_binds
+    val intro_names = map name_of_bindfix intro_binds
     val thy = Proof_Context.theory_of lthy
-    val (lthy', thms) =
+    val (thms, lthy') =
       check_close pred_lookup thm_lookup lthy pred_name intro_names close_name thy thy
     fun install (name, thm) =
       let
@@ -713,14 +706,14 @@ fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
           |> Pretty.block
       in
         (Pretty.writeln msg;
-         install_thm (Binding.name inst_name) thm)
+         Local_Theory.note ((Binding.name inst_name, []), [thm]) #> snd)
       end
   in
     fold install thms lthy'
   end
 
 val ci_parser =
-  (Parse.name -- (Parse.$$$ "assumes" |-- Parse.fixes) -- (Parse.$$$ "for" |-- Parse.name))
+  (Parse.name -- (@{keyword "assumes"} |-- Parse.fixes) -- (@{keyword "for"} |-- Parse.name))
 
 val () = Outer_Syntax.local_theory @{command_spec "close_inductive"}
           "closes an inductive predicate"
