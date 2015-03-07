@@ -32,7 +32,7 @@ sig
     (open_thm Symtab.table -> Proof.context -> Proof.context) ->
     string -> string list -> open_predicate Symtab.table ->
     open_thm Symtab.table -> Proof.state
-  val close_inductive: Proof.context -> string -> string list -> string ->
+  val close_inductive: Context.generic -> string -> string list -> string ->
     open_predicate Symtab.table -> open_thm Symtab.table ->
     (string * thm) list * Proof.context
 
@@ -221,20 +221,6 @@ fun pred_merge (a, b) =
        intros = AList.merge (op =) (op =) (a_intrs, b_intrs)} (* TODO fix op= *)
   end
 
-structure Open_Preds = Theory_Data
-  (type T = open_predicate Symtab.table
-   val empty = Symtab.empty
-   val extend = I
-   val merge = Symtab.join (K pred_merge))
-
-val pred_lookup = Symtab.lookup o Open_Preds.get
-
-fun pred_update' f k =
-  Symtab.map_default (k, empty_open_pred) f
-
-fun pred_update (f: open_predicate -> open_predicate) k thy =
-  Open_Preds.map (pred_update' f k) thy
-
 
 
 (** Open Theorems **)
@@ -293,26 +279,39 @@ fun thm_merge (Open_Thm a, Open_Thm b) =
        direct_proof = if is_some da then da else db}
   end
 
-structure Open_Thms = Theory_Data (* TODO merge slots! *)
-  (type T = open_thm Symtab.table
-   val empty = Symtab.empty
-   val extend = I
-   val merge = Symtab.join (K thm_merge))
 
-val thm_lookup = Symtab.lookup o Open_Thms.get
+(* Open Theorem and Open Predicate Data Storage *)
+
+structure Open_Data = Generic_Data
+  (type T = open_thm Symtab.table * open_predicate Symtab.table
+   val empty = (Symtab.empty, Symtab.empty)
+   val extend = I
+   val merge = fn ((a1, b1), (a2, b2)) =>
+    (Symtab.join (K thm_merge) (a1, a2), Symtab.join (K pred_merge) (b1, b2)))
+
+val thm_lookup = Symtab.lookup o fst o Open_Data.get
 
 fun thm_update' f k =
   Symtab.map_default (k, empty_thm) f
 
-fun thm_update (f:open_thm -> open_thm) k thy =
-  Open_Thms.map (thm_update' f k) thy
+fun thm_update (f:open_thm -> open_thm) k =
+  Open_Data.map (fn (a, b) => (thm_update' f k a, b))
+
+
+val pred_lookup = Symtab.lookup o snd o Open_Data.get
+
+fun pred_update' f k =
+  Symtab.map_default (k, empty_open_pred) f
+
+fun pred_update (f: open_predicate -> open_predicate) k =
+  Open_Data.map (fn (a, b) => (a, pred_update' f k b))
 
 
 (*** Commands ***)
 
 (** Opening Predicates **)
 
-fun pred_register' update ctxt n t =
+fun gen_pred_register update ctxt n t context =
   let
     val msg = [Pretty.str "Registered open inductive predicate ", pretty_pred n] @
        (case t of
@@ -320,22 +319,24 @@ fun pred_register' update ctxt n t =
         | NONE => [Pretty.str " without type"])
        |> Pretty.block
   in
-    update (pred_add_typ t ctxt msg) n
+    update (pred_add_typ t ctxt msg) n context
   end
 
-val open_inductive = pred_register' pred_update'
+val open_inductive = gen_pred_register pred_update'
 
 
-fun pred_register (b, t, _) thy =
+fun pred_register ctxt (b, t, _) context =
+  gen_pred_register pred_update ctxt (Binding.name_of b) t context
+
+fun open_inductive_cmd fixes lthy =
   let
-    val ctxt = Proof_Context.init_global thy
+    fun f thy =
+      let val context = Context.Theory thy in
+        fold (pred_register lthy) fixes context |> Context.theory_of
+      end
   in
-    pred_register' pred_update ctxt (Binding.name_of b) t thy
+    Local_Theory.background_theory f lthy
   end
-
-
-val open_inductive_cmd =
-  fold (pred_register #> Local_Theory.background_theory)
 
 val () = Outer_Syntax.local_theory @{command_spec "open_inductive"}
           "open inductive predicate definition"
@@ -364,8 +365,15 @@ fun add_intro ctxt name n raw_prop tab =
 
 
 fun add_intro_cmd (pred_name, (intro_name, prop)) lthy =
-  Local_Theory.background_theory
-    (gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop) lthy
+  let
+    fun f thy =
+      let val context = Context.Theory thy in
+        gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop context
+        |> Context.the_theory
+      end
+  in
+    Local_Theory.background_theory f lthy
+  end
 
 val ic_parser = Parse.name -- (Parse.name -- (@{keyword ":"} |-- Parse.prop))
 
@@ -383,7 +391,7 @@ fun maybe_typ lookup tab name =
 
 fun thm_reg_preds p_update nam = fold (p_update (pred_add_thm nam))
 
-fun thm_register' p_lookup ctxt nam raw_prop tab_or_thy =
+fun gen_thm_register p_lookup ctxt nam raw_prop tab_or_thy =
   let
     val prop = raw_prop |> Syntax.read_prop ctxt
     fun known (Free (n, _)) = Long_Name.explode n |> List.last |> cons (* TODO *)
@@ -407,25 +415,30 @@ fun thm_register' p_lookup ctxt nam raw_prop tab_or_thy =
 
 fun open_theorem ctxt nam raw_prop p_tab t_tab =
   let
-    val opreds = thm_register' Symtab.lookup ctxt nam raw_prop p_tab
+    val opreds = gen_thm_register Symtab.lookup ctxt nam raw_prop p_tab
   in
     (thm_reg_preds pred_update' nam opreds p_tab,
      thm_update' (K (make_open_thm raw_prop opreds)) nam t_tab)
   end
 
 
-fun thm_register nam raw_prop thy =
+fun thm_register nam raw_prop ctxt context =
   let
-    val ctxt = Proof_Context.init_global thy (* TODO *)
-    val opreds = thm_register' pred_lookup ctxt nam raw_prop thy
+    val opreds = gen_thm_register pred_lookup ctxt nam raw_prop context
   in
-    thm_reg_preds pred_update nam opreds thy
+    thm_reg_preds pred_update nam opreds context
     |> thm_update (K (make_open_thm raw_prop opreds)) nam
   end
 
 
-fun open_theorem_cmd (n, prop) =
-   Local_Theory.background_theory (thm_register n prop)
+fun open_theorem_cmd (n, prop) lthy =
+  let fun f thy =
+    let val context = Context.Theory thy in
+      thm_register n prop lthy context |> Context.the_theory
+    end
+  in
+    Local_Theory.background_theory f lthy
+  end
 
 val () = Outer_Syntax.local_theory @{command_spec "open_theorem"}
           "declares open theorem"
@@ -496,14 +509,14 @@ fun name_of_bindfix (b, _, _) = Binding.name_of b
 
 fun show_intro_cmd lemma_name intro_name assms lthy =
   let
-    val thy = Proof_Context.theory_of lthy
-    fun cont thy = Local_Theory.background_theory (K thy)
+    val context = Context.Theory (Proof_Context.theory_of lthy)
+    fun cont context = Local_Theory.background_theory (K (Context.theory_of context))
     val assms' = map name_of_bindfix assms
   in
-    gen_show_open pred_lookup thm_lookup thm_update lthy cont lemma_name intro_name assms' thy thy
+    gen_show_open pred_lookup thm_lookup thm_update lthy cont lemma_name intro_name assms' context context
   end
 
-fun gen_show_open_direct p_lookup t_lookup t_update lthy t_cont thm_name assms p_tab t_tab =
+fun gen_show_open_direct p_lookup t_lookup t_update ctxt t_cont thm_name assms p_tab t_tab =
   let
     val open_thm =
       (case t_lookup t_tab thm_name of
@@ -513,7 +526,7 @@ fun gen_show_open_direct p_lookup t_lookup t_update lthy t_cont thm_name assms p
       (case find_preds p_lookup p_tab assms open_thm of
          Err n => intro_err (#preds open_thm) (hd n)
        | Res r => r)
-    val lthy' = fold save_assms assms' lthy
+    val lthy' = fold save_assms assms' ctxt
     fun after_qed [[thm]] = (t_update (add_direct_proof assms lthy' thm) thm_name t_tab) |> t_cont
       | after_qed thmss = many_thms_err thmss
   in
@@ -525,11 +538,11 @@ val show_open =
 
 fun show_open_cmd thm_name assms lthy =
   let
-    val thy = Proof_Context.theory_of lthy
-    fun cont thy' = Local_Theory.background_theory (K thy')
+    val context = Context.Theory (Proof_Context.theory_of lthy)
+    fun cont context = Local_Theory.background_theory (K (Context.theory_of context))
     val assms' = map name_of_bindfix assms
   in
-    gen_show_open_direct pred_lookup thm_lookup thm_update lthy cont thm_name assms' thy thy
+    gen_show_open_direct pred_lookup thm_lookup thm_update lthy cont thm_name assms' context context
   end
 
 fun show_open_switch ((thm_name, ""), assms) = show_open_cmd thm_name assms
@@ -675,8 +688,9 @@ fun gen_close t_lookup lthy pred_name pred intro_names close_name t_tab =
      lthy')
   end
 
-fun check_close p_lookup t_lookup ctxt pred_name intro_names close_name p_tab =
+fun check_close p_lookup t_lookup context pred_name intro_names close_name p_tab =
   let
+    val ctxt = Context.the_proof context
     val pred =
       case p_lookup p_tab pred_name of
         NONE => error ("Undefined open predicate: " ^ pred_name)
@@ -695,10 +709,10 @@ val close_inductive =
 
 fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
   let
+    val context = Context.Proof lthy
     val intro_names = map name_of_bindfix intro_binds
-    val thy = Proof_Context.theory_of lthy
     val (thms, lthy') =
-      check_close pred_lookup thm_lookup lthy pred_name intro_names close_name thy thy
+      check_close pred_lookup thm_lookup context pred_name intro_names close_name context context
     fun install (name, thm) =
       let
         val inst_name = name ^ "_" ^ close_name
