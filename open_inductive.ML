@@ -17,7 +17,7 @@ sig
 
   (** interface **)
 
-  val open_inductive: Proof.context -> string -> string option ->
+  val open_inductive: Proof.context -> string -> typ option ->
     open_predicate Symtab.table -> open_predicate Symtab.table
   val add_intro: Proof.context -> string -> string -> string ->
     open_predicate Symtab.table -> open_predicate Symtab.table
@@ -63,7 +63,7 @@ fun pretty_typs ctxt ts =
 fun pretty_terms ctxt ts =
   Pretty.block (map (Syntax.pretty_term ctxt) ts)
 
-fun str_typ ctxt t = Pretty.string_of (pretty_typs ctxt [t |> Syntax.read_typ ctxt])
+fun str_typ ctxt t = Pretty.string_of (pretty_typs ctxt [t])
 
 (** Markup **)
 
@@ -75,8 +75,7 @@ val mark_typ = Markup.bound
 val pretty_pred = Pretty.str #> Pretty.mark mark_open_pred
 val pretty_intro = Pretty.str #> Pretty.mark mark_intro
 val pretty_lemma = Pretty.str #> Pretty.mark mark_open_lemma
-fun pretty_typ ctxt t = Syntax.read_typ ctxt t
-  |> Syntax.pretty_typ ctxt |> Pretty.mark mark_typ
+fun pretty_typ ctxt = Syntax.pretty_typ ctxt #> Pretty.mark mark_typ
 
 
 
@@ -107,10 +106,11 @@ fun zip_results [] = []
 
 (*** Rewrite Helpers ***)
 
-fun make_inductive pred_name close_name t raw_intros lthy =
+fun make_inductive pred_name close_name typ raw_intros lthy =
   let
     fun bind' s = (Binding.name s, [])
     val intros = map (fn (n, p) => (bind' n, p)) raw_intros
+    (* TODO str_repair *) val t = if is_some typ then SOME (str_typ lthy (the typ)) else NONE
     val cnames = [(Binding.name pred_name, t, NoSyn)]
     val pnames = []
     val monos = []
@@ -130,9 +130,9 @@ fun make_inductive pred_name close_name t raw_intros lthy =
     Inductive.gen_add_inductive_i Inductive.add_ind_def flags vars' [] intrs' monos lthy
   end
 
-fun prepare_intro pred_name raw_typ intro spec lthy =
+fun prepare_intro pred_name typ intro spec lthy =
   let
-    val ({induct, ...}, lthy') = make_inductive pred_name pred_name raw_typ [(intro, spec)] lthy
+    val ({induct, ...}, lthy') = make_inductive pred_name pred_name typ [(intro, spec)] lthy
   in
    (induct, lthy')
   end
@@ -174,7 +174,7 @@ fun rewrite_prop pred t intro_name intro_spec ctxt raw_prop =
 (** Open Predicates **)
 
 datatype open_predicate = Open_Predicate of
-  {typ: string option, (* raw_typ of the predicate, must be "... => bool" *)
+  {typ: typ option, (* raw_typ of the predicate, must be "... => bool" *)
    thms: string list, (* names of open_theorems  that use this predicate *)
    intros: (string * string) list} (* introduction rules, format: (name * raw_spec) *)
 
@@ -326,7 +326,7 @@ val open_inductive = gen_pred_register pred_update'
 
 
 fun pred_register ctxt (b, t, _) context =
-  gen_pred_register pred_update ctxt (Binding.name_of b) t context
+  gen_pred_register pred_update ctxt (Binding.name_of b) (if is_some t then SOME (Syntax.read_typ ctxt (the t)) else NONE) context
 
 fun open_inductive_cmd fixes lthy =
   let
@@ -381,7 +381,8 @@ val () = Outer_Syntax.local_theory @{command_spec "add_intro"}
 
 fun maybe_typ lookup tab name =
   case lookup tab name of
-    (SOME (Open_Predicate {typ, ...})) => typ
+    (SOME (Open_Predicate {typ, ...})) =>
+      (* TODO str_repair *) (if is_some typ then SOME (str_typ @{context} (the typ)) else NONE)
   | _ => NONE
 
 fun thm_reg_preds p_update nam = fold (p_update (pred_add_thm nam))
@@ -485,9 +486,10 @@ fun gen_show_open p_lookup t_lookup t_update ctxt t_cont thm_name intro_name ass
       (case find_preds p_lookup p_tab (intro_name::assms) othm of
          Err n => intro_err' (hd n)
        | Res r => r)
-    val (pred_name, t) = hd assms' |> fst
+    val (pred_name, ty) = hd assms' |> fst
+    (* TODO str_repair *) val ty' = if is_some ty then SOME (Syntax.read_typ ctxt (the ty)) else NONE
     val intro_spec =  hd assms' |> snd |> hd |> snd
-    val (prop, ctxt) = #prop othm |> rewrite_prop pred_name t intro_name intro_spec ctxt
+    val (prop, ctxt) = #prop othm |> rewrite_prop pred_name ty' intro_name intro_spec ctxt
     val ctxt' = fold save_assms assms' ctxt
     fun after_qed pred [[thm]] =
           t_update (add_intro_proof pred intro_name assms ctxt' thm) thm_name t_tab |> t_cont
@@ -577,8 +579,12 @@ fun read_goal ctxt bind prop =
   end
 
 fun rewrite_goal ctxt pname ty cname =
-  read_goal ctxt [(Binding.name pname, ty, NoSyn)]
-  #> rename_free pname (if is_some ty then SOME (Syntax.read_typ ctxt (the ty)) else NONE) cname
+  let
+    (* TODO str_repair *) val ty' = if is_some ty then SOME (str_typ ctxt (the ty)) else NONE
+  in
+    read_goal ctxt [(Binding.name pname, ty', NoSyn)]
+    #> rename_free pname ty cname
+  end
 
 fun gen_pname pname =
   implies_intr_hyps #> Thm.generalize ([], [pname]) 2 (* TODO make it good *)
