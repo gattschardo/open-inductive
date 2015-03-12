@@ -330,12 +330,10 @@ fun pred_register ctxt (b, t, _) context =
 
 fun open_inductive_cmd fixes lthy =
   let
-    fun f thy =
-      let val context = Context.Theory thy in
-        fold (pred_register lthy) fixes context |> Context.theory_of
-      end
+    fun decl phi context =
+      fold (pred_register lthy) fixes context
   in
-    Local_Theory.background_theory f lthy
+    Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
 
 val () = Outer_Syntax.local_theory @{command_spec "open_inductive"}
@@ -366,13 +364,10 @@ fun add_intro ctxt name n raw_prop tab =
 
 fun add_intro_cmd (pred_name, (intro_name, prop)) lthy =
   let
-    fun f thy =
-      let val context = Context.Theory thy in
-        gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop context
-        |> Context.the_theory
-      end
+    fun decl phi context =
+      gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop context
   in
-    Local_Theory.background_theory f lthy
+    Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
 
 val ic_parser = Parse.name -- (Parse.name -- (@{keyword ":"} |-- Parse.prop))
@@ -432,12 +427,11 @@ fun thm_register nam raw_prop ctxt context =
 
 
 fun open_theorem_cmd (n, prop) lthy =
-  let fun f thy =
-    let val context = Context.Theory thy in
-      thm_register n prop lthy context |> Context.the_theory
-    end
+  let
+    fun decl phi context =
+      thm_register n prop lthy context
   in
-    Local_Theory.background_theory f lthy
+    Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
 
 val () = Outer_Syntax.local_theory @{command_spec "open_theorem"}
@@ -538,7 +532,10 @@ val show_open =
 
 fun show_open_cmd thm_name assms lthy =
   let
+    (* TODO figure this out *)
     val context = Context.Theory (Proof_Context.theory_of lthy)
+    (*val context = Context.Proof lthy*)
+    (*fun cont context' = Local_Theory.declaration {pervasive = false, syntax = false} (fn phi => (fn context => context'))*)
     fun cont context = Local_Theory.background_theory (K (Context.theory_of context))
     val assms' = map name_of_bindfix assms
   in
