@@ -12,13 +12,10 @@ add_intro eval const: "eval (Const n) n"
 add_intro eval add: "eval a ra \<Longrightarrow> eval b rb \<Longrightarrow> ra + rb = n \<Longrightarrow> eval (Add a b) n"
 add_intro eval sub: "eval a ra \<Longrightarrow> eval b rb \<Longrightarrow> ra - rb = n \<Longrightarrow> eval (Sub a b) n"
 
-
 open_theorem double_add shows "eval e n \<Longrightarrow> eval (Add e e) (2 * n)"
 
 show_open double_add assumes add
-proof (rule eval.add, simp_all)
-  show "n + n = 2 * n" by presburger
-qed
+by (rule eval.add, simp_all, presburger)
 
 fun cdouble where
   "cdouble (Const n) = Const (2 * n)"
@@ -31,7 +28,7 @@ show_open double for const
 proof-
   fix n
   have "cdouble (Const n) = Const (2 * n)" by (rule cdouble.simps(1))
-  with eval.const show "eval (cdouble (Const n)) (2 * n)"  by simp
+  with eval.const show "eval (cdouble (Const n)) (2 * n)" by simp
 qed
 
 show_open double for add
