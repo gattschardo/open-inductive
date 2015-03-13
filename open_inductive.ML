@@ -164,18 +164,22 @@ fun the_spec (a, [prop]) = (a, prop)
 fun read_spec vars specs =
   prepare vars (map single_spec specs) #>> apsnd (map the_spec)
 
-fun make_inductive pred_name close_name typ raw_intros lthy =
+fun make_inductive pred_name close_name typ intros lthy =
   let
-    fun bind' s = (Binding.name s, [])
-    val intros = map (fn (n, p) => (bind' n, p)) raw_intros
+    val intrs = map (fn (n, p) => ((Binding.name n, []), p)) intros
     val monos = []
     val flags =
      {quiet_mode = true, verbose = false, alt_name = Binding.empty,
       coind = false, no_elim = false, no_ind = false, skip_mono = false}
-    val vars = [((Binding.name pred_name, the typ), NoSyn)] (* fixme guarantee typ *)
-    val intrs = intros
-    val ((_, ty), syn) = hd vars
-    val vars' = [((Binding.name close_name, ty), syn)]
+    fun find_typ (Free (n, ty)) ty0 =
+          if n = pred_name then SOME ty else ty0
+      | find_typ _ ty0 = ty0
+    val ty =
+      if is_some typ then
+        the typ
+      else
+        Term.fold_aterms find_typ (snd (hd intros)) NONE |> the
+    val vars' = [((Binding.name close_name, ty), NoSyn)]
     fun rename_pred (Free (n, ty)) =
           Free (if n = pred_name then close_name else n, ty)
       | rename_pred x = x
@@ -442,7 +446,7 @@ val () = Outer_Syntax.local_theory @{command_spec "add_intro"}
 fun maybe_typ lookup tab name =
   case lookup tab name of
     (SOME (Open_Predicate {typ, ...})) =>
-      (* TODO str_repair *) typ
+      typ
   | _ => NONE
 
 fun thm_reg_preds p_update nam = fold (p_update (pred_add_thm nam))
