@@ -248,11 +248,11 @@ fun pred_add_typ typ' ctxt msg (Open_Predicate {typ, thms, intros}) =
       thms = thms,
       intros = intros})
 
-fun pred_add_intro name raw_spec (Open_Predicate {typ, thms, intros}) =
+fun pred_add_intro name spec (Open_Predicate {typ, thms, intros}) =
   (Open_Predicate {
     typ = typ,
     thms = thms,
-    intros = (name, raw_spec)::intros})
+    intros = (name, spec)::intros})
 
 fun pred_add_thm thm_name (Open_Predicate {typ, thms, intros}) =
   Open_Predicate {
@@ -334,30 +334,62 @@ fun thm_merge (Open_Thm a, Open_Thm b) =
 
 (* Open Theorem and Open Predicate Data Storage *)
 
-structure Open_Data = Generic_Data
+structure Data = Generic_Data
   (type T = open_thm Symtab.table * open_predicate Symtab.table
    val empty = (Symtab.empty, Symtab.empty)
    val extend = I
    val merge = fn ((a1, b1), (a2, b2)) =>
     (Symtab.join (K thm_merge) (a1, a2), Symtab.join (K pred_merge) (b1, b2)))
 
-val thm_lookup = Symtab.lookup o fst o Open_Data.get
+val thm_lookup = Symtab.lookup o fst o Data.get
 
 fun thm_update' f k =
   Symtab.map_default (k, empty_thm) f
 
 fun thm_update (f:open_thm -> open_thm) k =
-  Open_Data.map (fn (a, b) => (thm_update' f k a, b))
+  Data.map (fn (a, b) => (thm_update' f k a, b))
 
 
-val pred_lookup = Symtab.lookup o snd o Open_Data.get
+val pred_lookup = Symtab.lookup o snd o Data.get
 
 fun pred_update' f k =
   Symtab.map_default (k, empty_open_pred) f
 
 fun pred_update (f: open_predicate -> open_predicate) k =
-  Open_Data.map (fn (a, b) => (a, pred_update' f k b))
+  Data.map (fn (a, b) => (a, pred_update' f k b))
 
+
+fun morph_open_prf phi (assms, ctxt, thm) =
+  (assms, ctxt (* TODO what *), Morphism.thm phi thm)
+
+fun apply_morphism phi context =
+  let
+    val (thms, preds) = Data.get context
+    val thms' = thms |> Symtab.map (K
+      (fn Open_Thm {prop, preds, proofs, direct_proof} =>
+        Open_Thm {
+          prop = Morphism.term phi prop,
+          preds = preds,
+          proofs = proofs |> map (fn (p, is) =>
+            (p, is |> map (fn (i, prf) =>
+              (i, morph_open_prf phi prf)))),
+          direct_proof =
+            case direct_proof of
+              SOME prf => SOME (morph_open_prf phi prf)
+            | NONE => NONE}))
+    val preds' = preds |> Symtab.map (K
+      (fn Open_Predicate {typ, thms, intros} =>
+        Open_Predicate {
+          typ =
+            if is_some typ then
+              SOME (Morphism.typ phi (the typ))
+            else NONE,
+          thms = thms,
+          intros =
+            map (fn (n, i) => (n, Morphism.term phi i)) intros}))
+  in
+    Data.put (thms', preds') context
+  end
 
 (*** Commands ***)
 
@@ -392,8 +424,8 @@ fun pred_register (b, t, _) context =
 fun open_inductive_cmd fixes =
   let
     fun decl phi context =
-      (writeln "calling decl";
-      fold pred_register fixes context)
+      apply_morphism phi context
+      |> fold pred_register fixes
   in
     Local_Theory.declaration {pervasive = false, syntax = false} decl
   end
@@ -428,8 +460,8 @@ fun add_intro ctxt name n raw_prop tab =
 fun add_intro_cmd (pred_name, (intro_name, prop)) lthy =
   let
     fun decl phi context =
-      (writeln "calling decl";
-      gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop context)
+      apply_morphism phi context
+      |> gen_intro_register pred_lookup pred_update lthy pred_name intro_name prop
   in
     Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
@@ -494,7 +526,8 @@ fun thm_register nam raw_prop ctxt context =
 fun open_theorem_cmd (n, prop) lthy =
   let
     fun decl phi context =
-      thm_register n prop lthy context
+      apply_morphism phi context
+      |> thm_register n prop lthy
   in
     Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
