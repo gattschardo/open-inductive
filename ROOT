@@ -17,6 +17,7 @@ session "Open_Inductive" (AFP) = HOL +
 (* The top-level theories of the submission: *)
   theories
     Open_Inductive
+    Open_Arith_Eval
     
 (* Dependencies on document source files: *)
   document_files
