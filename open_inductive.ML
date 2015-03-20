@@ -555,6 +555,10 @@ fun intro_err preds intro_name =
 
 fun save_assms ((p, _), p_assms) = add_assms p_assms p
 
+fun gen_pname pname =
+  implies_intr_hyps #> Drule.generalize ([], [pname])
+
+
 fun show_intro ctxt t_cont thm_name intro_name assms context =
   let
     val othm =
@@ -572,7 +576,9 @@ fun show_intro ctxt t_cont thm_name intro_name assms context =
     val (_, ctxt00) = Proof_Context.add_fixes [(Binding.name pred_name, ty, NoSyn)] ctxt
     val ctxt' = fold save_assms assms' ctxt00
     fun after_qed pred [[thm]] =
-          thm_update (add_intro_proof pred intro_name assms thm) thm_name context |> t_cont
+      let val generalized_thm = gen_pname pred_name thm
+      in thm_update (add_intro_proof pred intro_name assms generalized_thm) thm_name context |> t_cont
+      end
       | after_qed _ thmss = many_thms_err thmss ctxt
   in
     Proof.theorem NONE (after_qed pred_name) [[(prop, [])]] ctxt'
@@ -603,7 +609,10 @@ fun show_open ctxt t_cont thm_name assms context =
     val (pred_name, ty) = hd assms' |> fst
     val (_, ctxt00) = Proof_Context.add_fixes [(Binding.name pred_name, ty, NoSyn)] ctxt
     val ctxt' = fold save_assms assms' ctxt00
-    fun after_qed [[thm]] = (thm_update (add_direct_proof assms thm) thm_name context) |> t_cont
+    fun after_qed [[thm]] =
+        let val generalized_thm = gen_pname pred_name thm
+        in (thm_update (add_direct_proof assms generalized_thm) thm_name context) |> t_cont
+        end
       | after_qed thmss = many_thms_err thmss
   in
     Proof.theorem NONE after_qed [[(#prop open_thm, [])]] ctxt'
@@ -648,9 +657,6 @@ fun rename_free name typ name' =
 fun make_tac induct i intro_rules =
   etac induct i THEN EVERY1 (map (single #> solve_tac) intro_rules)
 
-fun gen_pname pname =
-  implies_intr_hyps #> Thm.generalize ([], [pname]) 2 (* TODO use correct index *)
-
 fun clear_hyps cname ctxt hyp_thms thm =
   let
     val cert = cterm_of (Proof_Context.theory_of ctxt)
@@ -679,7 +685,7 @@ fun finish_proof pname close_name name ptyp prop induct rules named_intrs ctxt =
         then rename_free pname ptyp close_name prop
         else prop
     val hyp_rules = rules |> map (fn (a, r) =>
-      (hyps_from_assms a named_intrs, gen_pname pname r))
+      (hyps_from_assms a named_intrs, r))
     val tac =  (map snd named_intrs) ~~ hyp_rules
       |> map (fn (h, (hs, b)) => clear_hyps close_name ctxt (h :: hs) b)
       |> make_tac induct 1
@@ -688,15 +694,14 @@ fun finish_proof pname close_name name ptyp prop induct rules named_intrs ctxt =
     (name, thm)
   end
 
-fun close_direct ctxt pname ptyp named_intrs close_name (name, prop, (assms, proof)) thms =
+fun close_direct ctxt pname ptyp named_intrs close_name (name, prop, (assms, thm)) thms =
   let
     val goal = if pname <> close_name
       then rename_free pname ptyp close_name prop
       else prop
     val missing = get_missing named_intrs assms
     val hyps = hyps_from_assms assms named_intrs
-    val hyp_thm = gen_pname pname proof
-      |> clear_hyps close_name ctxt hyps
+    val hyp_thm = clear_hyps close_name ctxt hyps thm
     val tac = etac hyp_thm 1
   in
     if missing = [] then
