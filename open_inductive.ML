@@ -102,64 +102,6 @@ fun zip_results [] = []
 
 (*** Rewrite Helpers ***)
 
-fun close_forms ctxt i xs As =
-  let
-    val commons = map #1 xs
-    val _ =
-      (case duplicates (op =) commons of [] => ()
-      | dups => error ("Duplicate local variables " ^ commas_quote dups))
-    val frees = rev (fold (Variable.add_free_names ctxt) As (rev commons))
-    val types =
-      map (Type_Infer.param i o rpair []) (Name.invent Name.context Name.aT (length frees))
-    val uniform_typing = the o AList.lookup (op =) (frees ~~ types)
-
-    fun abs_body lev y (Abs (x, T, b)) = Abs (x, T, abs_body (lev + 1) y b)
-      | abs_body lev y (t $ u) = abs_body lev y t $ abs_body lev y u
-      | abs_body lev y (t as Free (x, T)) =
-          if x = y then Type.constraint (uniform_typing x) (Type.constraint T (Bound lev))
-          else t
-      | abs_body _ _ a = a
-    fun close (y, U) B =
-      let val B' = abs_body 0 y (Term.incr_boundvars 1 B)
-      in if Term.is_dependent B' then Logic.all_const dummyT $ Abs (y, U, B') else B end
-    fun close_form A =
-      let
-        val occ_frees = rev (Variable.add_free_names ctxt A [])
-        val bounds = xs @ map (rpair dummyT) (subtract (op =) commons occ_frees)
-      in fold_rev close bounds A end
-  in map close_form As end
-
-fun prepare vars raw_specss ctxt =
-  let
-    (*val (vars, vars_ctxt) = ctxt |> Proof_Context.read_vars raw_vars*)
-    val (xs, params_ctxt) = ctxt |> Proof_Context.add_fixes vars
-
-    val Asss =
-      (map o map) snd raw_specss
-      |> (burrow o burrow) (map (Syntax.parse_prop params_ctxt))
-    val names = Variable.names_of (params_ctxt |> (fold o fold o fold) Variable.declare_term Asss)
-      |> fold Name.declare xs
-    val Asss' = #1 ((fold_map o fold_map o fold_map) Term.free_dummy_patterns Asss names)
-    val idx = (fold o fold o fold) Term.maxidx_term Asss' ~1 + 1
-    val specs =
-      (fold_map
-        (fn Ass => fn i => (burrow (close_forms params_ctxt i []) Ass, i + 1)) Asss' idx) |> fst
-      |> flat |> burrow (Syntax.check_props params_ctxt)
-    val specs_ctxt = params_ctxt |> (fold o fold) Variable.declare_term specs
-
-    val (Ts, _) = specs_ctxt |> fold_map Proof_Context.inferred_param xs
-    val params = map2 (fn (b, _, mx) => fn T => ((b, T), mx)) vars Ts
-    val name_atts = map (fn ((name, atts), _) => (name, map (Attrib.check_src ctxt) atts)) (flat raw_specss)
-  in ((params, name_atts ~~ specs), specs_ctxt) end
-
-
-fun single_spec (a, prop) = [(a, [prop])]
-fun the_spec (a, [prop]) = (a, prop)
-  | the_spec _ = error "the_spec can't fail"
-
-fun read_spec vars specs =
-  prepare vars (map single_spec specs) #>> apsnd (map the_spec)
-
 fun make_inductive pred_name close_name typ intros lthy =
   let
     val intrs = map (fn (n, p) => ((Binding.name n, []), p)) intros
@@ -453,7 +395,7 @@ fun add_intro_cmd (pred_name, (intro_name, raw_prop)) lthy =
           case pred_lookup context' pred_name of
             NONE => error ("No such open inductive predicate: " ^ pred_name)
           | SOME (Open_Predicate p) => p
-        val ((_, specs), _) = read_spec [(Binding.name pred_name, #typ pred, NoSyn)] [((Binding.name intro_name, []), raw_prop)] lthy
+        val ((_, specs), _) = Specification.check_spec [(Binding.name pred_name, #typ pred, NoSyn)] [((Binding.name intro_name, []), Syntax.parse_prop lthy raw_prop)] lthy
         val prop = hd specs |> snd
       in
         add_intro lthy pred_name intro_name prop context'
@@ -506,7 +448,7 @@ fun open_theorem_cmd (n, raw_prop) lthy =
           (Binding.name p,
            maybe_typ context p,
            NoSyn))
-        val ((_, specs), _) = read_spec pred_fixes [((Binding.empty, []), raw_prop)] lthy
+        val ((_, specs), _) = Specification.check_spec pred_fixes [((Binding.empty, []), Syntax.parse_prop lthy raw_prop)] lthy
         val prop = hd specs |> snd
       in
         open_theorem lthy n prop context'
