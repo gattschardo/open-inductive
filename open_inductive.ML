@@ -780,12 +780,12 @@ fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
       close_inductive lthy pred_name intro_names close_name context
     fun install (name, thm) =
       let
-        val inst_name = name ^ "_" ^ close_name
-        val msg = (map Pretty.str ["Installing ", inst_name, ": "]) @ [pretty_thms lthy' [thm]]
+        val binding = Binding.qualify false close_name (Binding.name name)
+        val msg = [Pretty.str "Installing ", Binding.pretty binding, Pretty.str ": "] @ [pretty_thms lthy' [thm]]
           |> Pretty.block
       in
         (Pretty.writeln msg;
-         Local_Theory.note ((Binding.name inst_name, []), [thm]) #> snd)
+         Local_Theory.note ((binding, []), [thm]) #> snd)
       end
   in
     fold install thms lthy'

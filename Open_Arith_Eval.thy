@@ -114,7 +114,8 @@ close_inductive eval assumes const and add for eval
 close_inductive eval assumes const add and sub for eval'
 
 thm eval.induct
-thm commutes_eval
-thm double_add_eval
+thm eval.commutes
+thm commutes
+thm eval'.double_add
 
 end
