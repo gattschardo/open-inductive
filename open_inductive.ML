@@ -176,10 +176,7 @@ fun make_inductive pred_name close_name typ intros lthy =
       else
         Term.fold_aterms find_typ (snd (hd intros)) NONE |> the
     val vars' = [((Binding.name close_name, ty), NoSyn)]
-    fun rename_pred (Free (n, ty)) =
-          Free (if n = pred_name then close_name else n, ty)
-      | rename_pred x = x
-    val intrs' = map (fn (b, t) => (b, Term.map_aterms rename_pred t)) intrs
+    val intrs' = map (fn (b, t) => (b, Term.subst_free [(Free (pred_name, ty), Free (close_name, ty))] t)) intrs
   in
     Inductive.gen_add_inductive_i Inductive.add_ind_def flags vars' [] intrs' monos lthy
   end
