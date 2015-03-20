@@ -263,7 +263,9 @@ fun pred_merge (a, b) =
     else
       Open_Predicate {typ = ta,
        thms = a_thms @ b_thms |> sort_distinct string_ord,
-       intros = AList.merge (op =) (op =) (a_intrs, b_intrs)} (* TODO fix op= *)
+       intros = AList.merge (op =) (op =) (a_intrs, b_intrs)}
+        (* TODO fix fst op=: Better choice available once keys are proper bindings *)
+        (* TODO fix snd op=: terms up to alpha equality? *)
   end
 
 
@@ -313,7 +315,7 @@ fun thm_merge (Open_Thm a, Open_Thm b) =
     val {prop = pa, preds = a_preds, proofs = a_prfs, direct_proof = da} = a
     val {prop = pb, preds = b_preds, proofs = b_prfs, direct_proof = db} = b
     fun merge_prfs a b =
-      AList.join (op =) (K (AList.merge (op =) (K true))) (a, b) (* TODO fix op= *)
+      AList.join (op =) (K (AList.merge (op =) (K true))) (a, b) (* TODO fix op=, see above *)
   in
     if pa <> pb orelse a_preds <> b_preds then
       Open_Thm a
