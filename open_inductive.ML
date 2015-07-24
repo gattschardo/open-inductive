@@ -144,14 +144,13 @@ fun add_assms intros pred_name ctxt =
 fun rewrite_prop pred t intro_name intro_spec ctxt prop =
   let
     val ind_thm = prepare_intro pred t intro_name intro_spec ctxt
-    val thy = Proof_Context.theory_of ctxt
-    val cprop = cterm_of thy prop
+    val cprop = Thm.cterm_of ctxt prop
     val p_as_goal = Goal.init cprop
     val ind_tac = etac ind_thm 1 (* TODO: use real induction *)
   in
     case ind_tac p_as_goal |> Seq.pull of
       NONE => error "rewrite_prop: could not apply induction theorem"
-    | SOME (p, _) => (prems_of p |> hd, ctxt)
+    | SOME (p, _) => (Thm.prems_of p |> hd, ctxt)
     (* ctxt' discarded on purpose! *)
   end
 
@@ -364,7 +363,7 @@ fun open_inductive_cmd fixes =
     Local_Theory.declaration {pervasive = false, syntax = false} decl
   end
 
-val () = Outer_Syntax.local_theory @{command_spec "open_inductive"}
+val () = Outer_Syntax.local_theory @{command_keyword "open_inductive"}
           "open inductive predicate definition"
           (Parse.fixes >> open_inductive_cmd)
 
@@ -406,7 +405,7 @@ fun add_intro_cmd (pred_name, (intro_name, raw_prop)) lthy =
 
 val ic_parser = Parse.name -- (Parse.name -- (@{keyword ":"} |-- Parse.prop))
 
-val () = Outer_Syntax.local_theory @{command_spec "add_intro"}
+val () = Outer_Syntax.local_theory @{command_keyword "add_intro"}
           "adds intro rule to open inductive predicate"
           (ic_parser >> add_intro_cmd)
 
@@ -457,7 +456,7 @@ fun open_theorem_cmd (n, raw_prop) lthy =
     Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
 
-val () = Outer_Syntax.local_theory @{command_spec "open_theorem"}
+val () = Outer_Syntax.local_theory @{command_keyword "open_theorem"}
           "declares open theorem"
           (Parse.name -- ((Parse.maybe @{keyword "shows"}) |-- Parse.prop)
            >> open_theorem_cmd)
@@ -575,7 +574,7 @@ fun show_open_cmd thm_name assms lthy =
 fun show_open_switch ((thm_name, ""), assms) = show_open_cmd thm_name assms
   | show_open_switch ((thm_name, intro_name), assms) = show_intro_cmd thm_name intro_name assms
 
-val () = Outer_Syntax.local_theory_to_proof @{command_spec "show_open"}
+val () = Outer_Syntax.local_theory_to_proof @{command_keyword "show_open"}
   "shows an open theorem for an intro rule (or directly)"
   (Parse.name -- Scan.optional (@{keyword "for"} |-- Parse.name) "" --
      Scan.optional (@{keyword "assumes"} |-- Parse.fixes) []
@@ -596,18 +595,18 @@ fun rename_free name typ name' =
     map_aterms rename
   end
 
-fun make_tac induct i intro_rules =
-  etac induct i THEN EVERY1 (map (single #> solve_tac) intro_rules)
+fun make_tac ctxt induct i intro_rules =
+  etac induct i THEN EVERY1 (map (single #> solve_tac ctxt) intro_rules)
 
 fun clear_hyps cname ctxt hyp_thms thm =
   let
-    val cert = cterm_of (Proof_Context.theory_of ctxt)
+    val cert = Thm.cterm_of ctxt
     val thm' = (*Assumption.export true ctxt' ctxt thm*) thm
       |> instantiate' [] [SOME (Syntax.read_term ctxt cname |> cert)]
     (*val () = Pretty.block [Pretty.str "have thm: ", pretty_thms ctxt [t']] |> Pretty.writeln
     val () = Pretty.block [Pretty.str "have hyps: ", pretty_thms ctxt hyp_thms] |> Pretty.writeln*)
   in
-    thm' |> rule_by_tactic ctxt (REPEAT (solve_tac hyp_thms 1))
+    thm' |> rule_by_tactic ctxt (REPEAT (solve_tac ctxt hyp_thms 1))
   end
 
 fun hyps_from_assms assms named_intros =
@@ -630,7 +629,7 @@ fun finish_proof pname close_name name ptyp prop induct rules named_intrs ctxt =
       (hyps_from_assms a named_intrs, r))
     val tac =  (map snd named_intrs) ~~ hyp_rules
       |> map (fn (h, (hs, b)) => clear_hyps close_name ctxt (h :: hs) b)
-      |> make_tac induct 1
+      |> make_tac ctxt induct 1
     val thm = Goal.prove ctxt [] [] goal (K tac)
   in
     (name, thm)
@@ -736,7 +735,7 @@ fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
 val ci_parser =
   (Parse.name -- (@{keyword "assumes"} |-- Parse.fixes) -- (@{keyword "for"} |-- Parse.name))
 
-val () = Outer_Syntax.local_theory @{command_spec "close_inductive"}
+val () = Outer_Syntax.local_theory @{command_keyword "close_inductive"}
           "closes an inductive predicate"
           (ci_parser >> close_inductive_cmd)
 
