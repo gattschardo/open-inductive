@@ -48,58 +48,6 @@ end
 structure Open_Inductive : OPEN_INDUCTIVE =
 struct
 
-(*** Pretty-printing ***)
-
-fun pretty_thms ctxt ts =
-  map (Display.pretty_thm_item ctxt) ts |> Pretty.fbreaks |> Pretty.block
-
-fun pretty_typs ctxt ts =
-  Pretty.block (map (Syntax.pretty_typ ctxt) ts)
-
-fun pretty_terms ctxt ts =
-  Pretty.block (map (Syntax.pretty_term ctxt) ts)
-
-fun str_typ ctxt t = Pretty.string_of (pretty_typs ctxt [t])
-
-(** Markup **)
-
-val mark_open_pred = Markup.free
-val mark_intro = Markup.skolem
-val mark_open_lemma = Markup.free
-val mark_typ = Markup.bound
-
-val pretty_pred = Pretty.str #> Pretty.mark mark_open_pred
-val pretty_intro = Pretty.str #> Pretty.mark mark_intro
-val pretty_lemma = Pretty.str #> Pretty.mark mark_open_lemma
-fun pretty_typ ctxt = Syntax.pretty_typ ctxt #> Pretty.mark mark_typ
-
-
-
-(*** General Utilities ***)
-
-
-(** Result Datatype (Result in Rust, Either in Haskell) **)
-
-datatype ('a, 'b) result =
-  Err of 'a
-| Res of 'b
-
-fun first_res _ err [] = Err err
-  | first_res f err (x::xs) =
-      case f x of
-        SOME r => Res r
-      | NONE => first_res f err xs
-
-fun zip_errors [] = []
-  | zip_errors (Err x::xs) = x::zip_errors xs
-  | zip_errors (Res _::xs) = zip_errors xs
-
-fun zip_results [] = []
-  | zip_results (Err _::xs) = zip_results xs
-  | zip_results (Res x::xs) = x::zip_results xs
-
-
-
 (*** Rewrite Helpers ***)
 
 fun make_inductive pred_name close_name typ intros lthy =
