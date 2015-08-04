@@ -430,13 +430,13 @@ fun find_preds context intro_names thm =
         [] => NONE
       | i::_ =>
         SOME ((pred_name, maybe_typ context pred_name), (intro_name, snd i))
-    val intrs = map (fn iname => first_res (match_pred iname) iname (#preds thm)) intro_names
-    val fails = zip_errors intrs
+    val intrs = map (fn iname => Result.first (match_pred iname) iname (#preds thm)) intro_names
+    val fails = Result.zip_errors intrs
   in
     if not (null fails) then
-      Err fails
+      Result.Error fails
     else
-      Res (zip_results intrs |> AList.group (eq_fst (op =)))
+      Result.Ok (Result.zip_results intrs |> AList.group (eq_fst (op =)))
   end
 
 fun intro_err preds intro_name =
@@ -457,8 +457,8 @@ fun show_intro ctxt t_cont thm_name intro_name assms context =
     val intro_err' = intro_err (#preds othm)
     val assms' =
       (case find_preds context (intro_name::assms) othm of
-         Err n => intro_err' (hd n)
-       | Res r => r)
+         Result.Error n => intro_err' (hd n)
+       | Result.Ok r => r)
     val (pred_name, ty) = hd assms' |> fst
     val intro_spec =  hd assms' |> snd |> hd |> snd
     val (prop, _) = rewrite_prop pred_name ty intro_name intro_spec ctxt (#prop othm)
@@ -493,8 +493,8 @@ fun show_open ctxt t_cont thm_name assms context =
        | SOME (Open_Thm t) => t)
     val assms' =
       (case find_preds context assms open_thm of
-         Err n => intro_err (#preds open_thm) (hd n)
-       | Res r => r)
+         Result.Error n => intro_err (#preds open_thm) (hd n)
+       | Result.Ok r => r)
     val (pred_name, ty) = hd assms' |> fst
     val (_, ctxt00) = Proof_Context.add_fixes [(Binding.name pred_name, ty, NoSyn)] ctxt
     val ctxt' = fold save_assms assms' ctxt00
