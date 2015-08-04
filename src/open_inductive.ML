@@ -48,6 +48,8 @@ end
 structure Open_Inductive : OPEN_INDUCTIVE =
 struct
 
+open OI_Fmt
+
 (*** Rewrite Helpers ***)
 
 fun make_inductive pred_name close_name typ intros lthy =
@@ -282,9 +284,9 @@ fun apply_morphism phi context =
 fun open_inductive n t context =
   let
     val ctxt = Context.proof_of context
-    val msg = [Pretty.str "Registered open inductive predicate ", pretty_pred n] @
+    val msg = [Pretty.str "Registered open inductive predicate ", color_pred_name n] @
        (case t of
-          SOME typ => [Pretty.str " with type ", pretty_typ ctxt typ]
+          SOME typ => [Pretty.str " with type ", color_typ ctxt typ]
         | NONE => [Pretty.str " without type"])
        |> Pretty.block
   in
@@ -325,8 +327,8 @@ fun add_intro ctxt pred_name intro_name prop context =
     let
       val _ (* typecheck only*) = prepare_intro pred_name (#typ p) intro_name prop ctxt
     in
-      Pretty.block [Pretty.str "Registered introduction rule ", pretty_intro intro_name,
-         Pretty.str ": ", pretty_terms ctxt [prop], Pretty.str " for ", pretty_pred pred_name,
+      Pretty.block [Pretty.str "Registered introduction rule ", color_intro_name intro_name,
+         Pretty.str ": ", Syntax.pretty_term ctxt prop, Pretty.str " for ", color_pred_name pred_name,
          Pretty.str "."]
        |> Pretty.writeln;
       (pred_update (pred_add_intro intro_name prop)) pred_name context
@@ -376,9 +378,9 @@ fun open_theorem ctxt nam prop context =
       |> filter (pred_lookup context #> is_some)
       |> sort_distinct string_ord
   in
-    Pretty.block [Pretty.str "Declared open theorem ", pretty_lemma nam, Pretty.str " as ",
-        pretty_terms ctxt [prop], Pretty.str " on ",
-        Pretty.commas (map pretty_pred opreds) |> Pretty.block]
+    Pretty.block [Pretty.str "Declared open theorem ", color_lemma_name nam, Pretty.str " as ",
+        Syntax.pretty_term ctxt prop, Pretty.str " on ",
+        Pretty.commas (map color_pred_name opreds) |> Pretty.block]
     |> Pretty.writeln;
     thm_reg_preds nam opreds context
     |> thm_update (K (make_open_thm prop opreds)) nam
@@ -416,7 +418,7 @@ val () = Outer_Syntax.local_theory @{command_keyword "open_theorem"}
 fun thm_err name = error ("No such theorem: " ^ name)
 
 fun many_thms_err thmss ctxt = error ("More than one theorem proved? Have: " ^
-  (thmss |> map (Pretty.string_of o pretty_thms ctxt) |> commas))
+  (map (Pretty.string_of o Pretty.block o map (Display.pretty_thm ctxt)) thmss |> commas))
 
 
 fun find_preds context intro_names thm =
@@ -637,11 +639,11 @@ fun gen_close lthy pred_name pred intro_names close_name context =
       end
   in
     (Pretty.writeln (Pretty.block (Pretty.breaks
-      [Pretty.block ([Pretty.str "Closing inductive predicate ", pretty_pred pred_name,
-          Pretty.str " with "] @ Pretty.commas (map pretty_intro intro_names) @ [Pretty.str " as ",
-        pretty_pred close_name, Pretty.str "."]),
+      [Pretty.block ([Pretty.str "Closing inductive predicate ", color_pred_name pred_name,
+          Pretty.str " with "] @ Pretty.commas (map color_intro_name intro_names) @ [Pretty.str " as ",
+        color_pred_name close_name, Pretty.str "."]),
       Pretty.block ([Pretty.str "Candidates for closing: "] @
-        Pretty.commas (map pretty_lemma lemma_names))])));
+        Pretty.commas (map color_lemma_name lemma_names))])));
     (fold (close_lemma lthy') lemmas []
      |> fold (close_direct lthy' pred_name ptyp named_intrs close_name) directs,
      lthy')
@@ -670,7 +672,7 @@ fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
     fun install (name, thm) =
       let
         val binding = Binding.qualify false close_name (Binding.name name)
-        val msg = [Pretty.str "Installing ", Binding.pretty binding, Pretty.str ": "] @ [pretty_thms lthy' [thm]]
+        val msg = [Pretty.str "Installing ", Binding.pretty binding, Pretty.str ": "] @ [Display.pretty_thm lthy' thm]
           |> Pretty.block
       in
         (Pretty.writeln msg;

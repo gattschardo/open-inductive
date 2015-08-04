@@ -16,7 +16,7 @@ Open inductive predicates with flexible sets of introduction rules
 and open theorems with inductive proofs on a per-introduction-rule basis.
 *}
 
-ML_file "src/pretty.ML"
+ML_file "src/oi_fmt.ML"
 ML_file "src/result.ML"
 ML_file "src/open_inductive.ML"
 

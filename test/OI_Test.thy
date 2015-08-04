@@ -11,10 +11,10 @@ fun assert_eq a b =
 
 ML_file "fail.ML"
 
-ML_file "../src/pretty.ML"
-ML_file "pretty_test.ML"
-
 ML_file "../src/result.ML"
 ML_file "result_test.ML"
+
+ML_file "../src/oi_fmt.ML"
+ML_file "oi_fmt_test.ML"
 
 end
