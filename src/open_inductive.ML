@@ -29,6 +29,8 @@ sig
   val show_open: local_theory ->
     (Context.generic -> Proof.context -> Proof.context) ->
     string -> string list -> Context.generic -> Proof.state
+  val show_open_switch: (string * string) * (binding * 'a * 'b) list ->
+    Proof.context -> Proof.state
   val close_inductive: local_theory -> string -> string list -> string ->
     Context.generic -> (string * thm) list * local_theory
 
@@ -313,9 +315,6 @@ fun open_inductive_cmd fixes =
     Local_Theory.declaration {pervasive = false, syntax = false} decl
   end
 
-val () = Outer_Syntax.local_theory @{command_keyword "open_inductive"}
-          "open inductive predicate definition"
-          (Parse.fixes >> open_inductive_cmd)
 
 
 (** Defining Intros **)
@@ -353,11 +352,8 @@ fun add_intro_cmd (pred_name, (intro_name, raw_prop)) lthy =
     Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
 
-val ic_parser = Parse.name -- (Parse.name -- (@{keyword ":"} |-- Parse.prop))
 
-val () = Outer_Syntax.local_theory @{command_keyword "add_intro"}
-          "adds intro rule to open inductive predicate"
-          (ic_parser >> add_intro_cmd)
+
 
 
 (** Defining Theorems **)
@@ -406,10 +402,7 @@ fun open_theorem_cmd (n, raw_prop) lthy =
     Local_Theory.declaration {pervasive = false, syntax = false} decl lthy
   end
 
-val () = Outer_Syntax.local_theory @{command_keyword "open_theorem"}
-          "declares open theorem"
-          (Parse.name -- ((Parse.maybe @{keyword "shows"}) |-- Parse.prop)
-           >> open_theorem_cmd)
+
 
 
 
@@ -524,11 +517,7 @@ fun show_open_cmd thm_name assms lthy =
 fun show_open_switch ((thm_name, ""), assms) = show_open_cmd thm_name assms
   | show_open_switch ((thm_name, intro_name), assms) = show_intro_cmd thm_name intro_name assms
 
-val () = Outer_Syntax.local_theory_to_proof @{command_keyword "show_open"}
-  "shows an open theorem for an intro rule (or directly)"
-  (Parse.name -- Scan.optional (@{keyword "for"} |-- Parse.name) "" --
-     Scan.optional (@{keyword "assumes"} |-- Parse.fixes) []
-   >> show_open_switch)
+
 
 
 
@@ -681,12 +670,5 @@ fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
   in
     fold install thms lthy'
   end
-
-val ci_parser =
-  (Parse.name -- (@{keyword "assumes"} |-- Parse.fixes) -- (@{keyword "for"} |-- Parse.name))
-
-val () = Outer_Syntax.local_theory @{command_keyword "close_inductive"}
-          "closes an inductive predicate"
-          (ci_parser >> close_inductive_cmd)
 
 end

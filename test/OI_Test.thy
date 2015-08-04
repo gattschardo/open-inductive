@@ -17,4 +17,9 @@ ML_file "result_test.ML"
 ML_file "../src/oi_fmt.ML"
 ML_file "oi_fmt_test.ML"
 
+ML_file "../src/oi_parse.ML"
+ML_file "oi_parse_test.ML"
+
+ML_file "../src/open_inductive.ML"
+
 end
