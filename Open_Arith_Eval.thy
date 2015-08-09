@@ -99,16 +99,10 @@ show_open rem_add_correct for const
 
 show_open rem_add_correct for add
   assumes sub const
-  apply simp
-  apply (erule eval.sub)
-  apply (rule eval.sub)
-  apply (rule eval.const)
-  apply simp_all
-  apply presburger
-  done
+  by simp
 
 show_open rem_add_correct for sub
-  using eval.sub by simp
+  by simp
 
 close_inductive eval assumes const and add for eval
 close_inductive eval assumes const add and sub for eval'

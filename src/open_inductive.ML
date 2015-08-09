@@ -24,15 +24,13 @@ sig
   val open_theorem: local_theory -> string -> term ->
     Context.generic -> Context.generic
   val show_intro: local_theory ->
-    (Context.generic -> Proof.context -> Proof.context) ->
-    string -> string -> string list -> Context.generic -> Proof.state
+    string -> string -> string list -> Proof.state
   val show_open: local_theory ->
-    (Context.generic -> Proof.context -> Proof.context) ->
-    string -> string list -> Context.generic -> Proof.state
+    string -> string list -> Proof.state
   val show_open_switch: (string * string) * (binding * 'a * 'b) list ->
     Proof.context -> Proof.state
   val close_inductive: local_theory -> string -> string list -> string ->
-    Context.generic -> (string * thm) list * local_theory
+    (string * thm) list * local_theory
 
 
   (** outer syntax **)
@@ -65,10 +63,9 @@ fun make_inductive pred_name close_name typ intros lthy =
           if n = pred_name then SOME ty else ty0
       | find_typ _ ty0 = ty0
     val ty =
-      if is_some typ then
-        the typ
-      else
-        Term.fold_aterms find_typ (snd (hd intros)) NONE |> the
+      case typ of
+        SOME typ => typ
+      | NONE => Term.fold_aterms find_typ (snd (hd intros)) NONE |> the
     val vars' = [((Binding.name close_name, ty), NoSyn)]
     val intrs' = map (fn (b, t) => (b, Term.subst_free [(Free (pred_name, ty), Free (close_name, ty))] t)) intrs
   in
@@ -96,13 +93,12 @@ fun add_assms intros pred_name ctxt =
 fun rewrite_prop pred t intro_name intro_spec ctxt prop =
   let
     val ind_thm = prepare_intro pred t intro_name intro_spec ctxt
-    val cprop = Thm.cterm_of ctxt prop
-    val p_as_goal = Goal.init cprop
+    val prop_as_goal = Thm.cterm_of ctxt prop |> Goal.init
     val ind_tac = etac ind_thm 1 (* TODO: use real induction *)
   in
-    case ind_tac p_as_goal |> Seq.pull of
+    case ind_tac prop_as_goal |> Seq.pull of
       NONE => error "rewrite_prop: could not apply induction theorem"
-    | SOME (p, _) => (Thm.prems_of p |> hd, ctxt)
+    | SOME (p, ctxt') => Thm.prems_of p |> hd
     (* ctxt' discarded on purpose! *)
   end
 
@@ -185,10 +181,7 @@ fun make_open_thm prop preds =
 
 fun add_intro_proof pred intro assms thm (Open_Thm {prop, preds, proofs, direct_proof}) =
   let
-    val prfs =
-      case AList.lookup (op =) proofs pred of
-        NONE => []
-      | SOME l => l
+    val prfs = the_default [] (AList.lookup (op =) proofs pred)
     val prfs' = AList.update (op =) (intro, (assms, thm)) prfs
   in
     Open_Thm {prop = prop,
@@ -229,7 +222,7 @@ structure Data = Generic_Data
    val merge = fn ((a1, b1), (a2, b2)) =>
     (Symtab.join (K thm_merge) (a1, a2), Symtab.join (K pred_merge) (b1, b2)))
 
-val thm_lookup = Symtab.lookup o fst o Data.get
+val thm_lookup' = Symtab.lookup o fst o Data.get o Context.Proof
 
 fun thm_update' f k =
   Symtab.map_default (k, empty_thm) f
@@ -240,6 +233,8 @@ fun thm_update (f:open_thm -> open_thm) k =
 
 val pred_lookup = Symtab.lookup o snd o Data.get
 
+val pred_lookup' = pred_lookup o Context.Proof
+
 fun pred_update' f k =
   Symtab.map_default (k, empty_open_pred) f
 
@@ -248,12 +243,11 @@ fun pred_update (f: open_predicate -> open_predicate) k =
 
 
 fun morph_open_prf phi (assms, thm) =
-  (assms, Morphism.thm phi thm)
+  (assms, (*Morphism.thm phi*) thm)
 
-fun apply_morphism phi context =
+fun apply_morphism phi =
   let
-    val (thms, preds) = Data.get context
-    val thms' = thms |> Symtab.map (K
+    val map_thms = Symtab.map (K
       (fn Open_Thm {prop, preds, proofs, direct_proof} =>
         Open_Thm {
           prop = Morphism.term phi prop,
@@ -261,22 +255,16 @@ fun apply_morphism phi context =
           proofs = proofs |> map (fn (p, is) =>
             (p, is |> map (fn (i, prf) =>
               (i, morph_open_prf phi prf)))),
-          direct_proof =
-            case direct_proof of
-              SOME prf => SOME (morph_open_prf phi prf)
-            | NONE => NONE}))
-    val preds' = preds |> Symtab.map (K
+          direct_proof = Option.map (morph_open_prf phi) direct_proof}))
+    val map_preds  = Symtab.map (K
       (fn Open_Predicate {typ, thms, intros} =>
         Open_Predicate {
-          typ =
-            if is_some typ then
-              SOME (Morphism.typ phi (the typ))
-            else NONE,
+          typ = Option.map (Morphism.typ phi) typ,
           thms = thms,
           intros =
-            map (fn (n, i) => (n, Morphism.term phi i)) intros}))
+            map (fn (n, i) => (n, (*Morphism.term phi*) i)) intros}))
   in
-    Data.put (thms', preds') context
+    Data.map (fn (thms, preds) => (map_thms thms, map_preds preds))
   end
 
 (*** Commands ***)
@@ -298,10 +286,7 @@ fun open_inductive n t context =
 fun pred_register (b, t, _) context =
   let
     val ctxt = Context.proof_of context
-    val typ =
-      if is_some t
-      then SOME (Syntax.read_typ ctxt (the t))
-      else NONE
+    val typ = Option.map (Syntax.read_typ ctxt) t
   in
     open_inductive (Binding.name_of b) typ context
   end
@@ -417,14 +402,14 @@ fun many_thms_err thmss ctxt = error ("More than one theorem proved? Have: " ^
 fun find_preds context intro_names thm =
   let
     fun get_intrs pred_name =
-      case pred_lookup context pred_name of
+      case pred_lookup' context pred_name of
         SOME (Open_Predicate {intros, ...}) => intros
       | _ => []
     fun match_pred intro_name pred_name =
       case filter (fst #> (curry op =) intro_name) (get_intrs pred_name) of
         [] => NONE
       | i::_ =>
-        SOME ((pred_name, maybe_typ context pred_name), (intro_name, snd i))
+        SOME ((pred_name, maybe_typ (Context.Proof context) pred_name), (intro_name, snd i))
     val intrs = map (fn iname => Result.first (match_pred iname) iname (#preds thm)) intro_names
     val fails = Result.zip_errors intrs
   in
@@ -443,25 +428,29 @@ fun gen_pname pname =
   implies_intr_hyps #> Drule.generalize ([], [pname])
 
 
-fun show_intro ctxt t_cont thm_name intro_name assms context =
+fun show_intro ctxt thm_name intro_name assms =
   let
     val othm =
-      (case thm_lookup context thm_name of
+      (case thm_lookup' ctxt thm_name of
          SOME (Open_Thm t) => t
        | NONE => thm_err thm_name)
     val intro_err' = intro_err (#preds othm)
     val assms' =
-      (case find_preds context (intro_name::assms) othm of
+      (case find_preds ctxt (intro_name::assms) othm of
          Result.Error n => intro_err' (hd n)
        | Result.Ok r => r)
     val (pred_name, ty) = hd assms' |> fst
     val intro_spec =  hd assms' |> snd |> hd |> snd
-    val (prop, _) = rewrite_prop pred_name ty intro_name intro_spec ctxt (#prop othm)
+    val prop = rewrite_prop pred_name ty intro_name intro_spec ctxt (#prop othm)
     val (_, ctxt00) = Proof_Context.add_fixes [(Binding.name pred_name, ty, NoSyn)] ctxt
     val ctxt' = fold save_assms assms' ctxt00
     fun after_qed pred [[thm]] =
       let val generalized_thm = gen_pname pred_name thm
-      in thm_update (add_intro_proof pred intro_name assms generalized_thm) thm_name context |> t_cont
+        fun decl phi context =
+          apply_morphism phi context |>
+          thm_update (add_intro_proof pred intro_name assms generalized_thm) thm_name
+      in
+        Local_Theory.declaration {pervasive = false, syntax = false} decl
       end
       | after_qed _ thmss = many_thms_err thmss ctxt
   in
@@ -473,21 +462,19 @@ fun name_of_bindfix (b, _, _) = Binding.name_of b
 
 fun show_intro_cmd lemma_name intro_name assms lthy =
   let
-    val context = Context.Theory (Proof_Context.theory_of lthy)
-    fun cont context = Local_Theory.background_theory (K (Context.theory_of context))
     val assms' = map name_of_bindfix assms
   in
-    show_intro lthy cont lemma_name intro_name assms' context
+    show_intro lthy lemma_name intro_name assms'
   end
 
-fun show_open ctxt t_cont thm_name assms context =
+fun show_open ctxt thm_name assms =
   let
     val open_thm =
-      (case thm_lookup context thm_name of
+      (case thm_lookup' ctxt thm_name of
          NONE => thm_err thm_name
        | SOME (Open_Thm t) => t)
     val assms' =
-      (case find_preds context assms open_thm of
+      (case find_preds ctxt assms open_thm of
          Result.Error n => intro_err (#preds open_thm) (hd n)
        | Result.Ok r => r)
     val (pred_name, ty) = hd assms' |> fst
@@ -495,7 +482,11 @@ fun show_open ctxt t_cont thm_name assms context =
     val ctxt' = fold save_assms assms' ctxt00
     fun after_qed [[thm]] =
         let val generalized_thm = gen_pname pred_name thm
-        in (thm_update (add_direct_proof assms generalized_thm) thm_name context) |> t_cont
+        fun decl phi context =
+          apply_morphism phi context |>
+          thm_update (add_direct_proof assms generalized_thm) thm_name
+        in
+          Local_Theory.declaration {pervasive = false, syntax = false} decl
         end
       | after_qed thmss = many_thms_err thmss
   in
@@ -504,14 +495,9 @@ fun show_open ctxt t_cont thm_name assms context =
 
 fun show_open_cmd thm_name assms lthy =
   let
-    (* TODO figure this out *)
-    val context = Context.Theory (Proof_Context.theory_of lthy)
-    (*val context = Context.Proof lthy*)
-    (*fun cont context' = Local_Theory.declaration {pervasive = false, syntax = false} (fn phi => (fn context => context'))*)
-    fun cont context = Local_Theory.background_theory (K (Context.theory_of context))
     val assms' = map name_of_bindfix assms
   in
-    show_open lthy cont thm_name assms' context
+    show_open lthy thm_name assms'
   end
 
 fun show_open_switch ((thm_name, ""), assms) = show_open_cmd thm_name assms
@@ -584,13 +570,13 @@ fun close_direct ctxt pname ptyp named_intrs close_name (name, prop, (assms, thm
     val hyp_thm = clear_hyps close_name ctxt hyps thm
     val tac = etac hyp_thm 1
   in
-    if missing = [] then
+    if null missing then
       (name, Goal.prove ctxt [] [] goal (K tac))::thms
     else
       (warn_missing name missing "introduction rules:"; thms)
   end
 
-fun gen_close lthy pred_name pred intro_names close_name context =
+fun gen_close lthy pred_name pred intro_names close_name =
   let
     val intro_specs = map (the o AList.lookup (op =) (#intros pred)) intro_names
     val ({induct, intrs, ...}, lthy') =
@@ -598,7 +584,7 @@ fun gen_close lthy pred_name pred intro_names close_name context =
     val named_intrs = intro_names ~~ intrs
 
     val lemma_names = #thms pred
-    val lemmas0 = map (thm_lookup context) lemma_names
+    val lemmas0 = map (thm_lookup' lthy) lemma_names
       |> zip_options lemma_names
 
     val lemmas = filter (fn (_, Open_Thm {direct_proof = NONE, ...}) => true | _ => false) lemmas0
@@ -638,10 +624,10 @@ fun gen_close lthy pred_name pred intro_names close_name context =
      lthy')
   end
 
-fun close_inductive ctxt pred_name intro_names close_name context =
+fun close_inductive ctxt pred_name intro_names close_name =
   let
     val pred =
-      case pred_lookup context pred_name of
+      case pred_lookup' ctxt pred_name of
         NONE => error ("Undefined open predicate: " ^ pred_name)
       | SOME (Open_Predicate p) => p
     val pred_intros = #intros pred |> map fst
@@ -649,15 +635,14 @@ fun close_inductive ctxt pred_name intro_names close_name context =
     case find_first (not o member (op =) pred_intros) intro_names of
       SOME x => error ("No introduction rule named " ^ x ^
         " defined in open predicate " ^ pred_name)
-    | NONE => gen_close ctxt pred_name pred intro_names close_name context
+    | NONE => gen_close ctxt pred_name pred intro_names close_name
   end
 
 fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
   let
-    val context = Context.Proof lthy (* TODO morph! *)
     val intro_names = map name_of_bindfix intro_binds
     val (thms, lthy') =
-      close_inductive lthy pred_name intro_names close_name context
+      close_inductive lthy pred_name intro_names close_name
     fun install (name, thm) =
       let
         val binding = Binding.qualify false close_name (Binding.name name)
