@@ -74,9 +74,9 @@ fun make_inductive pred_name close_name typ intros lthy =
 
 fun prepare_intro pred_name typ intro spec lthy =
   let
-    val ({induct, ...}, _) = make_inductive pred_name pred_name typ [(intro, spec)] lthy
+    val ({induct, ...}, ctxt) = make_inductive pred_name pred_name typ [(intro, spec)] lthy
   in
-    induct
+    (induct, ctxt)
   end
 
 fun add_assms intros pred_name ctxt =
@@ -86,20 +86,20 @@ fun add_assms intros pred_name ctxt =
       (Binding.name name |> Binding.qualify true pred_name, [])) intros
     val assms = map (fn (n, thm) => (n, [(thm, [])])) (assm_names ~~ assm_props)
   in
-    Proof_Context.add_assms_i Assumption.assume_export assms ctxt
+    Proof_Context.add_assms_i (*no _i*) Assumption.assume_export assms ctxt
     |> snd
   end
 
 fun rewrite_prop pred t intro_name intro_spec ctxt prop =
   let
-    val ind_thm = prepare_intro pred t intro_name intro_spec ctxt
+    val (ind_thm, ctxt1) = prepare_intro pred t intro_name intro_spec ctxt
     val prop_as_goal = Thm.cterm_of ctxt prop |> Goal.init
-    val ind_tac = etac ind_thm 1 (* TODO: use real induction *)
+    val ind_tac = eresolve_tac ctxt1 [ind_thm] 1 (* TODO: use real induction *)
   in
     case ind_tac prop_as_goal |> Seq.pull of
       NONE => error "rewrite_prop: could not apply induction theorem"
-    | SOME (p, ctxt') => Thm.prems_of p |> hd
-    (* ctxt' discarded on purpose! *)
+    | SOME (p, ctxt2) => Thm.prems_of p |> hd
+    (* ctxt1, ctxt2 discarded on purpose! *)
   end
 
 
@@ -521,13 +521,13 @@ fun rename_free name typ name' =
   end
 
 fun make_tac ctxt induct i intro_rules =
-  etac induct i THEN EVERY1 (map (single #> solve_tac ctxt) intro_rules)
+  eresolve_tac ctxt [induct] i THEN EVERY1 (map (single #> solve_tac ctxt) intro_rules)
 
 fun clear_hyps cname ctxt hyp_thms thm =
   let
     val cert = Thm.cterm_of ctxt
     val thm' = (*Assumption.export true ctxt' ctxt thm*) thm
-      |> instantiate' [] [SOME (Syntax.read_term ctxt cname |> cert)]
+      |> (*Thm.*)Drule.instantiate' [] [SOME (Syntax.read_term ctxt cname |> cert)]
     (*val () = Pretty.block [Pretty.str "have thm: ", pretty_thms ctxt [t']] |> Pretty.writeln
     val () = Pretty.block [Pretty.str "have hyps: ", pretty_thms ctxt hyp_thms] |> Pretty.writeln*)
   in
@@ -568,7 +568,7 @@ fun close_direct ctxt pname ptyp named_intrs close_name (name, prop, (assms, thm
     val missing = get_missing named_intrs assms
     val hyps = hyps_from_assms assms named_intrs
     val hyp_thm = clear_hyps close_name ctxt hyps thm
-    val tac = etac hyp_thm 1
+    val tac = eresolve_tac ctxt [hyp_thm] 1
   in
     if null missing then
       (name, Goal.prove ctxt [] [] goal (K tac))::thms
