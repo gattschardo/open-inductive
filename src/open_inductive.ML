@@ -118,17 +118,21 @@ val empty_open_pred = Open_Predicate
    intros = []}
 
 fun pred_add_typ typ' ctxt msg (Open_Predicate {typ, thms, intros}) =
-  if is_some typ andalso not (typ' = typ) then
-    (if is_some typ' then
-       error ("Can't re-type predicate, was " ^ (the typ |> str_typ ctxt) ^
-         ", would become " ^ (the typ' |> str_typ ctxt))
-     else
-       error ("Can't delete type from predicate, was " ^ (the typ |> str_typ ctxt)))
-  else
-    (Pretty.writeln msg;
-     Open_Predicate {typ = typ',
-      thms = thms,
-      intros = intros})
+  let
+    val str_typ = Syntax.string_of_typ ctxt
+  in
+    if is_some typ andalso not (typ' = typ) then
+      (if is_some typ' then
+         error ("Can't re-type predicate, was " ^ (the typ |> str_typ) ^
+           ", would become " ^ (the typ' |> str_typ))
+       else
+         error ("Can't delete type from predicate, was " ^ (the typ |> str_typ)))
+    else
+      (Pretty.writeln msg;
+       Open_Predicate {typ = typ',
+        thms = thms,
+        intros = intros})
+  end
 
 fun pred_add_intro name spec (Open_Predicate {typ, thms, intros}) =
   (Open_Predicate {

@@ -1,5 +1,5 @@
 theory Open_Arith_Eval
-imports Open_Inductive
+imports Main Open_Inductive
 begin
 
 datatype expr =

@@ -7,8 +7,6 @@ items for output.
 
 signature OI_FMT =
 sig
-  val str_typ: Proof.context -> typ -> string
-
   val color_pred_name: string -> Pretty.T
   val color_intro_name: string -> Pretty.T
   val color_lemma_name: string -> Pretty.T
@@ -17,10 +15,6 @@ end
 
 structure OI_Fmt : OI_FMT =
 struct
-
-(*** Pretty-printing ***)
-
-fun str_typ ctxt t = Pretty.string_of (Syntax.pretty_typ ctxt t)
 
 (** Markup **)
 

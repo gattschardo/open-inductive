@@ -1,6 +1,5 @@
 theory OI_Test
-imports
-  Main
+imports Main
 begin
 
 ML {*
