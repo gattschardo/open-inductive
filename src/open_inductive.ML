@@ -86,7 +86,7 @@ fun add_assms intros pred_name ctxt =
       (Binding.name name |> Binding.qualify true pred_name, [])) intros
     val assms = map (fn (n, thm) => (n, [(thm, [])])) (assm_names ~~ assm_props)
   in
-    Proof_Context.add_assms_i (*no _i*) Assumption.assume_export assms ctxt
+    Proof_Context.add_assms Assumption.assume_export assms ctxt
     |> snd
   end
 
@@ -400,7 +400,7 @@ fun open_theorem_cmd (n, raw_prop) lthy =
 fun thm_err name = error ("No such theorem: " ^ name)
 
 fun many_thms_err thmss ctxt = error ("More than one theorem proved? Have: " ^
-  (map (Pretty.string_of o Pretty.block o map (Display.pretty_thm ctxt)) thmss |> commas))
+  (map (Pretty.string_of o Pretty.block o map (Thm.pretty_thm ctxt)) thmss |> commas))
 
 
 fun find_preds context intro_names thm =
@@ -531,7 +531,7 @@ fun clear_hyps cname ctxt hyp_thms thm =
   let
     val cert = Thm.cterm_of ctxt
     val thm' = (*Assumption.export true ctxt' ctxt thm*) thm
-      |> (*Thm.*)Drule.instantiate' [] [SOME (Syntax.read_term ctxt cname |> cert)]
+      |> Thm.instantiate' [] [SOME (Syntax.read_term ctxt cname |> cert)]
     (*val () = Pretty.block [Pretty.str "have thm: ", pretty_thms ctxt [t']] |> Pretty.writeln
     val () = Pretty.block [Pretty.str "have hyps: ", pretty_thms ctxt hyp_thms] |> Pretty.writeln*)
   in
@@ -650,7 +650,7 @@ fun close_inductive_cmd ((pred_name, intro_binds), close_name) lthy =
     fun install (name, thm) =
       let
         val binding = Binding.qualify false close_name (Binding.name name)
-        val msg = [Pretty.str "Installing ", Binding.pretty binding, Pretty.str ": "] @ [Display.pretty_thm lthy' thm]
+        val msg = [Pretty.str "Installing ", Binding.pretty binding, Pretty.str ": "] @ [Thm.pretty_thm lthy' thm]
           |> Pretty.block
       in
         (Pretty.writeln msg;
